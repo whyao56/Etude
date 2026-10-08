@@ -199,12 +199,107 @@ def build_payload(target: str, kind: str, count: int, zh_variants: int) -> dict:
     }
 
 
+def build_syllabus_payload(count: int) -> dict:
+    """一份**形状正确**的大纲。
+
+    刻意照着提示词里那条最要紧的约束来造：功能词 / 固定说法 / 句型 / 话题词
+    各占一部分，而不是一张词表。桩要是造出一张词表，那么「提示词有没有
+    真的把形状要求传下去」这件事就永远测不出来了。
+    """
+    words = [
+        ("actually", "word", "A2", "把「其实」这一层意思说出来，不再只会说 really"),
+        ("be about to", "phrase", "B1", "说清楚「正要去做」，比 I will 精确"),
+        ("I'd rather ...", "sentence", "B1", "客气又有立场地说出自己更想要哪个"),
+        ("get used to", "phrase", "B2", "讲「习惯了」这件事，而不是只会 used to"),
+        ("though", "word", "B1", "把补充和转折挂在句尾，像母语者那样说话"),
+        ("make sense", "phrase", "B1", "说「这个讲得通 / 我理解了」"),
+        ("What do you mean by ...?", "sentence", "B1", "听不懂时把话头接住，而不是沉默"),
+        ("waste of time", "phrase", "B1", "表达不值当，语气比 not good 重"),
+    ]
+    outline = []
+    for i in range(count):
+        target, kind, band, why = words[i % len(words)]
+        outline.append({
+            "target": f"{target}" if i < len(words) else f"{target} {i + 1}",
+            "kind": kind,
+            "domain": "日常口语",
+            "band": band,
+            "why": why,
+        })
+    return {
+        "note": "先从能立刻开口的功能词和固定说法开始，再往句型走。每天练几个就行，不用一次做完。",
+        "outline": outline,
+    }
+
+
+def _png_bytes(width: int = 320, height: int = 200) -> bytes:
+    """造一张**尺寸像样**的真 PNG。
+
+    不引第三方库：桩的依赖越少越好，而且这个函数本身也顺手验证了
+    「响应体真的是 PNG」—— ``images._sniff`` 就是靠文件头判断格式的。
+
+    为什么不用 1×1：界面截图是要拿去看/放进文档的。1×1 的图在
+    ``max-width:100%`` 下渲染出来还是 1×1 像素，于是每张截图里
+    场景图的位置看上去都是「图没加载出来」—— 而实际上链路全通。
+    那会让人去修一个根本不存在的 bug。
+    """
+    import struct
+    import zlib
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + tag
+            + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        )
+
+    raw = bytearray()
+    horizon = int(height * 0.55)
+    for y in range(height):
+        raw.append(0)  # 每行的 filter 字节：0 = 不滤波
+        for _x in range(width):
+            if y < horizon:
+                # 上半：天，由上到下渐亮。
+                t = y / max(horizon, 1)
+                r, g, b = int(118 + 72 * t), int(150 + 58 * t), int(192 + 38 * t)
+            else:
+                # 下半：地面，越往下越暗 —— 看着像一张户外照片。
+                t = (y - horizon) / max(height - horizon, 1)
+                r, g, b = int(152 - 46 * t), int(142 - 44 * t), int(118 - 40 * t)
+            raw += bytes((r, g, b))
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(bytes(raw), 6))
+        + chunk(b"IEND", b"")
+    )
+
+
+FAKE_PNG = _png_bytes()
+
+
 def payload_from_messages(messages: list[dict]) -> dict:
+    system = ""
     user = ""
+    for m in messages:
+        if m.get("role") == "system" and not system:
+            system = m.get("content", "")
     for m in reversed(messages):
         if m.get("role") == "user":
             user = m.get("content", "")
             break
+
+    # 大纲请求走另一套结构。靠系统提示词里的标记分路，
+    # 不靠「用户那句话长什么样」—— 后者随时会被改文案。
+    if "You design the SYLLABUS" in system:
+        import re
+
+        m = re.search(r"Provide exactly (\d+) items", user)
+        return build_syllabus_payload(int(m.group(1)) if m else 5)
+
     target = "appreciate"
     kind = "word"
     for marker, name in (
@@ -276,6 +371,43 @@ async def speech(request: Request) -> Response:
     return Response(content=FAKE_MP3, media_type="audio/mpeg")
 
 
+@app.get("/fake-image.png")
+def fake_image() -> Response:
+    """给「接口返回地址而不是数据」那条分支当下载源。"""
+    return Response(content=FAKE_PNG, media_type="image/png")
+
+
+@app.post("/v1/images/generations")
+async def images(request: Request) -> Response:
+    """画图。
+
+    三种返回形态都要能被解析，所以这里用模型名控制走哪一条：
+      · 默认            → ``b64_json``（OpenAI 默认形态）
+      · ``url-...``     → ``url``（智谱等，需要再下一次）
+      · ``fault-image-*`` → 各自的坏情况
+    只测一种形态的话，换个厂商就会报「没返回图片」，而图片其实就在响应里。
+    """
+    import base64
+
+    body = await request.json()
+    if not body.get("prompt"):
+        return JSONResponse({"error": {"message": "empty prompt"}}, status_code=400)
+
+    model = str(body.get("model", ""))
+    if model.startswith("fault-image-auth"):
+        return JSONResponse({"error": {"message": "invalid api key"}}, status_code=401)
+    if model.startswith("fault-image-notfound"):
+        return JSONResponse({"error": {"message": "model not found"}}, status_code=404)
+    if model.startswith("fault-image-empty"):
+        return {"data": []}
+    if model.startswith("fault-image-badpayload"):
+        # 200，但里面有东西不是图片 —— 用来验「不信 URL 后缀、靠文件头嗅探」。
+        return {"data": [{"b64_json": base64.b64encode(b"<html>nope</html>").decode()}]}
+    if model.startswith("url-"):
+        return {"data": [{"url": str(request.base_url) + "fake-image.png"}]}
+    return {"data": [{"b64_json": base64.b64encode(FAKE_PNG).decode()}]}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=18999)
@@ -287,6 +419,9 @@ def main() -> int:
     print("设置里 base_url 填它，API Key 和模型名随便填。")
     print("模型名用 fault-401 / fault-404 / fault-500 / fault-notjson / "
           "fault-fenced / fault-messy / fault-slow 可以模拟各种坏情况。")
+    print("画图同样在这个服务上：/v1/images/generations。"
+          "模型名以 url- 开头会返回地址而不是图片数据，"
+          "fault-image-auth / -notfound / -empty / -badpayload 是各自的坏情况。")
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
     return 0
 

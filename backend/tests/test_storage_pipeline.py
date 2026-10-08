@@ -96,7 +96,7 @@ def test_stale_generating_lessons_are_recovered(isolated_data):
 # ------------------------------------------------------ ready ≠ complete
 
 
-def _seed(lesson_id, sentences, audio_map):
+def _seed(lesson_id, sentences, audio_map, image_map=None):
     from app import db
 
     db.finish_lesson(
@@ -108,43 +108,83 @@ def _seed(lesson_id, sentences, audio_map):
             "swaps": [],
         },
         audio_map,
+        image_map,
     )
+
+
+def _give_media(lesson_id):
+    """给每条例句都补上「磁盘上真的存在」的语音和配图。
+
+    为什么要真写文件：``readiness`` 是去磁盘核对的。只改数据库的辅助函数
+    会让「文件其实不在」这类问题在测试里消失。
+    """
+    from app import db
+    from app.paths import audio_dir, images_dir
+
+    for i, row in enumerate(db.example_rows(lesson_id)):
+        audio = f"edge-{'%020x' % i}.mp3"
+        image = f"search-{'%020x' % i}.jpg"
+        (audio_dir() / audio).write_bytes(b"x")
+        (images_dir() / image).write_bytes(b"x")
+        db.execute(
+            "UPDATE examples SET audio_path = ?, scene_image = ? WHERE id = ?",
+            (audio, image, row["id"]),
+        )
 
 
 def test_ready_and_complete_are_different_things(isolated_data):
     """这是整个项目最要紧的一条区分。
 
     ``ready`` = 现在拿起来就能练（有例句）
-    ``complete`` = 素材齐全（语音也在）
+    ``complete`` = 素材齐全（语音、配图都在）
 
     合成成一个是错的：语音挂了不代表读写和造句不能用。
     """
     from app import db
-    from app.paths import audio_dir
 
     lesson_id = db.create_lesson("x", "word")
     _seed(lesson_id, ["One.", "Two."], {})
 
     r = db.readiness(lesson_id)
     assert r["ready"] is True, "有例句就该能练"
-    assert r["complete"] is False, "没有语音就不算齐全"
+    assert r["complete"] is False, "语音和配图都没有，不算齐全"
     assert r["missing_audio_ids"], "应当报出哪几条缺语音"
+    assert len(r["missing_image_ids"]) == 2, "也应当报出哪几条缺场景图"
     assert any("语音" in p for p in r["problems"])
+    assert any("场景图" in p for p in r["problems"])
 
-    # 补上语音之后才齐全。
-    names = []
-    for i in range(2):
-        name = f"edge-{'%020d' % i}.mp3"
-        (audio_dir() / name).write_bytes(b"x")
-        names.append(name)
-    from app import db as db2
-
-    for row, name in zip(db2.example_rows(lesson_id), names):
-        db2.execute("UPDATE examples SET audio_path = ? WHERE id = ?", (name, row["id"]))
+    # 语音和配图都补上之后才齐全。
+    _give_media(lesson_id)
 
     r2 = db.readiness(lesson_id)
     assert r2["ready"] and r2["complete"]
     assert r2["problems"] == []
+
+
+def test_images_source_off_makes_missing_pictures_a_non_problem(isolated_data):
+    """用户明确选了「不配图」时，缺图不该被报成问题。
+
+    否则训练包详情页会永远挂着一句「素材还不齐」，旁边还有一个按了也没用的
+    「补场景图」按钮。报一个用户无法消除的警告，等于教会用户无视所有警告。
+    """
+    from app import config, db
+
+    config.save({"images": {"source": "off"}})
+    lesson_id = db.create_lesson("x", "word")
+    _seed(lesson_id, ["One."], {})
+
+    from app.paths import audio_dir
+
+    row = db.example_rows(lesson_id)[0]
+    audio = "edge-00000000000000000000.mp3"
+    (audio_dir() / audio).write_bytes(b"x")
+    db.execute("UPDATE examples SET audio_path = ? WHERE id = ?", (audio, row["id"]))
+
+    r = db.readiness(lesson_id)
+    assert r["images_expected"] is False
+    assert r["missing_image_ids"], "缺图这个事实仍然要报出来，只是不算问题"
+    assert not any("场景图" in p for p in r["problems"])
+    assert r["complete"] is True
 
 
 def test_a_card_whose_audio_file_vanished_is_reported(isolated_data):
@@ -157,16 +197,17 @@ def test_a_card_whose_audio_file_vanished_is_reported(isolated_data):
     from app.paths import audio_dir
 
     lesson_id = db.create_lesson("x", "word")
-    _seed(lesson_id, ["Only one."], {0: "edge-00000000000000000000.mp3"})
-    path = audio_dir() / "edge-00000000000000000000.mp3"
-    path.write_bytes(b"x")
+    _seed(lesson_id, ["Only one."], {})
+    _give_media(lesson_id)
     assert db.readiness(lesson_id)["complete"] is True
 
+    path = audio_dir() / db.example_rows(lesson_id)[0]["audio_path"]
     path.unlink()  # 模拟被清理软件删掉 / 换了数据目录
     r = db.readiness(lesson_id)
     assert r["ready"] is True
     assert r["complete"] is False
     assert r["audio_ready"] == 0
+    assert not any("场景图" in p for p in r["problems"]), "配图还在，不该一起报"
 
 
 def test_empty_lesson_is_not_ready(isolated_data):

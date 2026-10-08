@@ -116,6 +116,12 @@ class Browser {
   }
 
   async evaluate(expression) {
+    // SHOT_DEBUG=1 时把每次求值的表达式打出来。
+    // 排查「页面莫名跑到了别的视图」这类问题时，光看报错永远不够 ——
+    // 得知道到底有哪些脚本在页面上跑过。
+    if (process.env.SHOT_DEBUG) {
+      console.log("  [eval] " + String(expression).replace(/\s+/g, " ").slice(0, 90));
+    }
     const result = await this.send("Runtime.evaluate", {
       expression,
       returnByValue: true,

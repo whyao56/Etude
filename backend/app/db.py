@@ -15,13 +15,14 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from .paths import db_path
+from .paths import db_path, writable_root
 
 _LOCK = threading.RLock()
 _CONN: sqlite3.Connection | None = None
@@ -34,6 +35,26 @@ SCHEMA = """
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
+-- 学习计划：以目标为导向的批量素材储备。
+-- 注意它存的是**目标**，不是一个难度标签 —— 见 prompts.SYLLABUS_SYSTEM。
+CREATE TABLE IF NOT EXISTS plans (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    language      TEXT    NOT NULL DEFAULT 'en',
+    -- exam（应付某个考试）/ fluency（真正学会听说读写认）/ custom（自己写的目标）
+    goal_kind     TEXT    NOT NULL DEFAULT 'fluency',
+    goal_label    TEXT    NOT NULL DEFAULT '',
+    goal_detail   TEXT    NOT NULL DEFAULT '',
+    -- 用到的领域，JSON 数组：日常 / 职场 / 学术 / 旅行 …
+    domains       TEXT    NOT NULL DEFAULT '[]',
+    target_count  INTEGER NOT NULL DEFAULT 20,
+    -- draft（大纲已生成，等着确认）/ generating / ready / failed
+    status        TEXT    NOT NULL DEFAULT 'draft',
+    error         TEXT    NOT NULL DEFAULT '',
+    outline       TEXT    NOT NULL DEFAULT '[]',
+    created_at    TEXT    NOT NULL,
+    updated_at    TEXT    NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS lessons (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     target      TEXT    NOT NULL,
@@ -44,6 +65,8 @@ CREATE TABLE IF NOT EXISTS lessons (
     note        TEXT    NOT NULL DEFAULT '',
     status      TEXT    NOT NULL DEFAULT 'generating',
     error       TEXT    NOT NULL DEFAULT '',
+    -- 属于哪个学习计划。0 = 用户手动建的单个训练包。
+    plan_id     INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT    NOT NULL,
     updated_at  TEXT    NOT NULL
 );
@@ -62,6 +85,10 @@ CREATE TABLE IF NOT EXISTS examples (
     register    TEXT    NOT NULL DEFAULT '',
     audio_path  TEXT    NOT NULL DEFAULT '',
     audio_voice TEXT    NOT NULL DEFAULT '',
+    -- 场景配图（相对 images 目录的文件名，内容寻址）＋ 当时用的检索/生成词。
+    -- 存相对路径：存绝对路径的话，用户一搬数据目录就全成死链了。
+    scene_image TEXT    NOT NULL DEFAULT '',
+    image_query TEXT    NOT NULL DEFAULT '',
     created_at  TEXT    NOT NULL
 );
 
@@ -105,7 +132,22 @@ CREATE INDEX IF NOT EXISTS idx_cards_due ON cards (due_at, introduced);
 CREATE INDEX IF NOT EXISTS idx_cards_lesson ON cards (lesson_id);
 CREATE INDEX IF NOT EXISTS idx_examples_lesson ON examples (lesson_id, ord);
 CREATE INDEX IF NOT EXISTS idx_reviews_at ON reviews (at);
+CREATE INDEX IF NOT EXISTS idx_lessons_plan ON lessons (plan_id);
 """
+
+# 0.0.1 → 0.0.2 需要补的列。
+#
+# 为什么要有这个而不是「让用户删库重建」：用户的复习进度就在这个库里。
+# 升级一次就把进度清空，等于告诉他「别升级」。
+#
+# 为什么是 ALTER TABLE 而不是 CREATE TABLE IF NOT EXISTS：
+# 后者对**已经存在**的表什么都不做 —— 于是新加的列在老库上永远不存在，
+# 症状是升级后第一次写入报「no such column」，而且只在那条路径上炸。
+_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("lessons", "plan_id", "INTEGER NOT NULL DEFAULT 0"),
+    ("examples", "scene_image", "TEXT NOT NULL DEFAULT ''"),
+    ("examples", "image_query", "TEXT NOT NULL DEFAULT ''"),
+)
 
 
 def now() -> str:
@@ -130,10 +172,41 @@ def connect() -> sqlite3.Connection:
             path.parent.mkdir(parents=True, exist_ok=True)
             conn = sqlite3.connect(str(path), check_same_thread=False)
             conn.row_factory = sqlite3.Row
+            # 顺序不能反：**先补列，再跑建表脚本**。
+            #
+            # 建表脚本里带着新加的索引（idx_lessons_plans 建在 lessons.plan_id 上）。
+            # 对一个 0.0.1 留下的老库来说，`CREATE TABLE IF NOT EXISTS lessons`
+            # 是空操作（表已经在了、但没有新列），紧接着那条建索引就报
+            # `no such column: plan_id` —— 程序在**拿到第一个连接时就崩**，
+            # 也就是每次启动都起不来。而开发机上永远是全新库，永远不出现。
+            #
+            # 反过来的顺序是安全的：老库先 ALTER 补列，再跑建表脚本；
+            # 全新库里表还不存在，_migrate 会跳过（表结构由建表脚本负责）。
+            _migrate(conn)
             conn.executescript(SCHEMA)
             conn.commit()
             _CONN = conn
         return _CONN
+
+
+def _migrate(conn: sqlite3.Connection) -> list[str]:
+    """给老版本留下的库补上新列。返回补了哪些，方便打日志。
+
+    只在 ``connect()`` 里跑一次。用 ``PRAGMA table_info`` 查实际结构，
+    不去猜版本号 —— 版本号会说谎（用户可能从任意一个中间状态升上来），
+    表结构不会。
+    """
+    applied: list[str] = []
+    for table, column, decl in _MIGRATIONS:
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if not existing:
+            # 表还不存在（全新库），建表时已经带上这一列了。
+            continue
+        if column in existing:
+            continue
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        applied.append(f"{table}.{column}")
+    return applied
 
 
 def close() -> None:
@@ -242,34 +315,58 @@ def lesson_detail(lesson_id: int) -> dict | None:
     return lesson
 
 
-def readiness(lesson_id: int) -> dict:
+def images_expected() -> bool:
+    """这个安装到底期不期待场景配图。
+
+    ``images.source = "off"`` 是用户明确的选择（比如长期离线，或者就是
+    不想要图）。这时候把「缺场景图」当成问题报出来是错的 —— 训练包详情页
+    会永远挂着一句「素材还不齐」，还配一个按了也没用的「补场景图」按钮。
+    报一个用户无法消除的警告，等于教会用户无视所有警告。
+    """
+    try:
+        from .config import load as _load_config
+
+        source = ((_load_config().get("images") or {}).get("source") or "").strip()
+    except Exception:  # noqa: BLE001 —— 配置读不出来不该让 readiness 崩掉
+        return True
+    return source != "off"
+
+
+def readiness(lesson_id: int, expect_images: bool | None = None) -> dict:
     """这个训练包「现在能不能真的练」。从实际内容算，不信 status。
 
     刻意分成两个字段，对应两种不同的界面行为：
 
     - ``ready``    —— 现在拿起来就能练（至少有例句）。有它才允许进入训练。
-    - ``complete`` —— 素材齐全（音频也在）。它只控制**要不要给提示条**，
+    - ``complete`` —— 素材齐全（音频在、配图也在）。它只控制**要不要给提示条**，
       不控制能不能练。
 
     把这两件事合成一个布尔值，就会出现「语音挂了所以整个包不能练」——
     而实际上读写和造句完全不受影响。
+
+    ``expect_images`` 默认按当前配置推断：配图关了就不把「缺图」当问题。
     """
-    from .paths import audio_dir
+    from .paths import audio_dir, images_dir
+
+    want_images = images_expected() if expect_images is None else bool(expect_images)
 
     examples = query(
-        "SELECT id, sentence, scene_zh, audio_path FROM examples WHERE lesson_id = ?",
+        "SELECT id, sentence, scene_zh, audio_path, scene_image "
+        "FROM examples WHERE lesson_id = ?",
         (lesson_id,),
     )
     missing_audio = []
+    missing_image = []
     for row in examples:
         rel = (row.get("audio_path") or "").strip()
-        if not rel:
+        # 「记录里有路径、磁盘上没有」是最阴的一种：界面会照常画出播放按钮/
+        # 图片框，点了/加载了没反应。所以这里两个都真的去磁盘核对。
+        if not rel or not (audio_dir() / rel).exists():
             missing_audio.append(row["id"])
-            continue
-        if not (audio_dir() / rel).exists():
-            # 记录里有音频路径、磁盘上没有 —— 这是最阴的一种：
-            # 界面会照常画出一个播放按钮，点了没反应。
-            missing_audio.append(row["id"])
+
+        img = (row.get("scene_image") or "").strip()
+        if not img or not (images_dir() / img).exists():
+            missing_image.append(row["id"])
 
     lesson = get_lesson(lesson_id) or {}
     problems: list[str] = []
@@ -279,12 +376,17 @@ def readiness(lesson_id: int) -> dict:
         problems.append("没有例句")
     if missing_audio:
         problems.append(f"{len(missing_audio)} 条例句缺语音")
+    if want_images and missing_image:
+        problems.append(f"{len(missing_image)} 条例句缺场景图")
 
     return {
         "has_gloss": bool((lesson.get("gloss") or "").strip()),
         "example_count": len(examples),
         "audio_ready": len(examples) - len(missing_audio),
+        "image_ready": len(examples) - len(missing_image),
         "missing_audio_ids": missing_audio,
+        "missing_image_ids": missing_image,
+        "images_expected": want_images,
         "ready": bool(examples),
         "complete": bool(examples) and not problems,
         "problems": problems,
@@ -295,6 +397,7 @@ def stats() -> dict:
     today = datetime.now(timezone.utc).date().isoformat()
     return {
         "lessons": (one("SELECT COUNT(*) AS n FROM lessons") or {}).get("n", 0),
+        "plans": (one("SELECT COUNT(*) AS n FROM plans") or {}).get("n", 0),
         "examples": (one("SELECT COUNT(*) AS n FROM examples") or {}).get("n", 0),
         "cards": (one("SELECT COUNT(*) AS n FROM cards") or {}).get("n", 0),
         "introduced": (
@@ -321,24 +424,31 @@ def stats() -> dict:
 
 
 def create_lesson(
-    target: str, kind: str = "word", language: str = "en"
+    target: str, kind: str = "word", language: str = "en", plan_id: int = 0
 ) -> int:
     ts = now()
     return execute(
         """
-        INSERT INTO lessons (target, kind, language, status, created_at, updated_at)
-        VALUES (?, ?, ?, 'generating', ?, ?)
+        INSERT INTO lessons
+            (target, kind, language, plan_id, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'generating', ?, ?)
         """,
-        (target.strip(), kind, language, ts, ts),
+        (target.strip(), kind, language, int(plan_id or 0), ts, ts),
     )
 
 
-def finish_lesson(lesson_id: int, payload: dict, audio: dict[int, str]) -> None:
+def finish_lesson(
+    lesson_id: int,
+    payload: dict,
+    audio: dict[int, str],
+    images: dict[int, str] | None = None,
+) -> None:
     """把生成结果一次性写进去，并铺开卡片。
 
     整体一个事务：中途失败不留半个训练包
     —— 「例句子集 + 卡片全集」这种半成品，比彻底失败更难查。
     """
+    images = images or {}
     ts = now()
     with _LOCK:
         conn = connect()
@@ -369,8 +479,9 @@ def finish_lesson(lesson_id: int, payload: dict, audio: dict[int, str]) -> None:
                     """
                     INSERT INTO examples
                         (lesson_id, ord, sentence, scene_en, scene_zh,
-                         zh_variants, register, audio_path, audio_voice, created_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?)
+                         zh_variants, register, audio_path, audio_voice,
+                         scene_image, image_query, created_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         lesson_id,
@@ -382,6 +493,8 @@ def finish_lesson(lesson_id: int, payload: dict, audio: dict[int, str]) -> None:
                         ex.get("register", ""),
                         audio.get(i, ""),
                         ex.get("audio_voice", ""),
+                        images.get(i, ""),
+                        ex.get("image_query", ""),
                         ts,
                     ),
                 )
@@ -432,6 +545,116 @@ def delete_lesson(lesson_id: int) -> None:
     execute("DELETE FROM cards WHERE lesson_id = ?", (lesson_id,))
     with _LOCK:
         connect().commit()
+
+
+# ------------------------------------------------------------------- 计划
+# 计划 = 一次「以目标为导向」的素材储备。它是**多份并存**的：
+# 用户可能同时准备「六级」和「口语能聊」两套，各自独立推进。
+
+
+def create_plan(
+    *,
+    language: str,
+    goal_kind: str,
+    goal_label: str,
+    goal_detail: str,
+    domains: list[str],
+    target_count: int,
+) -> int:
+    ts = now()
+    return execute(
+        """
+        INSERT INTO plans
+            (language, goal_kind, goal_label, goal_detail, domains,
+             target_count, status, outline, created_at, updated_at)
+        VALUES (?,?,?,?,?,?, 'draft', '[]', ?, ?)
+        """,
+        (
+            language,
+            goal_kind,
+            goal_label,
+            goal_detail,
+            json.dumps(domains, ensure_ascii=False),
+            int(target_count),
+            ts,
+            ts,
+        ),
+    )
+
+
+def get_plan(plan_id: int) -> dict | None:
+    row = one("SELECT * FROM plans WHERE id = ?", (plan_id,))
+    return _plan_out(row) if row else None
+
+
+def list_plans() -> list[dict]:
+    rows = query(
+        """
+        SELECT p.*,
+               (SELECT COUNT(*) FROM lessons l WHERE l.plan_id = p.id) AS lesson_count,
+               (SELECT COUNT(*) FROM lessons l
+                 WHERE l.plan_id = p.id AND l.status = 'ready')      AS ready_count
+          FROM plans p
+      ORDER BY p.id DESC
+        """
+    )
+    return [_plan_out(r) for r in rows]
+
+
+def _plan_out(row: dict) -> dict:
+    row = dict(row)
+    row["domains"] = _loads(row.get("domains"), [])
+    row["outline"] = _loads(row.get("outline"), [])
+    return row
+
+
+def set_plan_outline(plan_id: int, outline: list[dict]) -> None:
+    execute(
+        "UPDATE plans SET outline = ?, updated_at = ? WHERE id = ?",
+        (json.dumps(outline, ensure_ascii=False), now(), plan_id),
+    )
+
+
+def set_plan_status(plan_id: int, status: str, error: str = "") -> None:
+    execute(
+        "UPDATE plans SET status = ?, error = ?, updated_at = ? WHERE id = ?",
+        (status, error[:2000], now(), plan_id),
+    )
+
+
+def delete_plan(plan_id: int, *, with_lessons: bool = True) -> int:
+    """删计划。默认把它下面的训练包一起删 —— 留着的话它们会
+    以「不属于任何计划」的样子出现在列表里，用户会以为删除没生效。"""
+    removed = 0
+    if with_lessons:
+        for row in query("SELECT id FROM lessons WHERE plan_id = ?", (plan_id,)):
+            delete_lesson(row["id"])
+            removed += 1
+    else:
+        execute("UPDATE lessons SET plan_id = 0 WHERE plan_id = ?", (plan_id,))
+    execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+    with _LOCK:
+        connect().commit()
+    return removed
+
+
+def plan_lesson_progress(plan_id: int) -> dict:
+    row = one(
+        """
+        SELECT COUNT(*) AS total,
+               SUM(CASE WHEN status = 'ready'    THEN 1 ELSE 0 END) AS ready,
+               SUM(CASE WHEN status = 'failed'   THEN 1 ELSE 0 END) AS failed,
+               SUM(CASE WHEN status = 'generating' THEN 1 ELSE 0 END) AS running
+          FROM lessons WHERE plan_id = ?
+        """,
+        (plan_id,),
+    ) or {}
+    return {
+        "total": row.get("total") or 0,
+        "ready": row.get("ready") or 0,
+        "failed": row.get("failed") or 0,
+        "running": row.get("running") or 0,
+    }
 
 
 # ------------------------------------------------------------------- 复习

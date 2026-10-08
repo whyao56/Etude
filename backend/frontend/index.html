@@ -12,247 +12,504 @@
   改这个文件时的注意事项（沿用上个项目的教训）：
   · 没有编译器，所以改完要跑 `python scripts/check_js.py` 检查调用点
   · APP_VERSION 必须和后端 app/__init__.py 里的版本号一致，有测试盯着
+  · 事件名走 el() 的 onXxx 通道，它会 toLowerCase（大小写敏感，写错就静默失效）
+  · **任何按钮都不能「点了没反应」**。禁用是可以的，但必须同时
+    给出「为什么现在不能点」和「那现在能做什么」—— 0.0.2 修的就是
+    「评分按钮有 3 个是死的、却还显示手形光标」这件事。
 -->
 <style>
 :root{
-  --bg:#0f1115; --panel:#171a21; --panel-2:#1e222b; --line:#2a2f3a;
-  --fg:#e6e9ef; --fg-dim:#98a1b3; --fg-faint:#6b7385;
-  --accent:#6ea8fe; --accent-dim:#2f4a73;
-  --ok:#4ec9a0; --warn:#e0b155; --bad:#e06c75;
-  --radius:14px; --radius-sm:9px;
+  --bg:#0b0d12; --bg-2:#0f1219; --panel:#141822; --panel-2:#1b2030;
+  --panel-3:#212739;
+  --line:#242b3d; --line-2:#333c55;
+  --fg:#e8ecf5; --fg-dim:#9aa5bd; --fg-faint:#68738c;
+  --accent:#7aa2ff; --accent-2:#a78bfa; --accent-soft:#1c2743;
+  --ok:#3ddc97; --warn:#f0b849; --bad:#ff6b81;
+  --g0:#ff6b81; --g1:#f0b849; --g2:#7aa2ff; --g3:#3ddc97;
+  --radius:16px; --radius-sm:10px; --radius-xs:8px;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 12px 32px -18px rgba(0,0,0,.9);
   --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
   --sans:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  --side:266px; --side-collapsed:62px;
 }
 @media (prefers-color-scheme: light){
   :root{
-    --bg:#f6f7f9; --panel:#ffffff; --panel-2:#f0f2f6; --line:#dfe3ea;
-    --fg:#1c2027; --fg-dim:#5b6472; --fg-faint:#8b93a1;
-    --accent:#2f6fdb; --accent-dim:#cfe0fb;
-    --ok:#1f9d76; --warn:#a97a12; --bad:#c0392b;
+    --bg:#f4f6fb; --bg-2:#eef1f7; --panel:#ffffff; --panel-2:#f4f6fb;
+    --panel-3:#eaeef7;
+    --line:#e3e8f2; --line-2:#ccd4e4;
+    --fg:#141a26; --fg-dim:#586279; --fg-faint:#8b94a8;
+    --accent:#3568dd; --accent-2:#7c5cf0; --accent-soft:#e6edfd;
+    --ok:#0f9768; --warn:#9c6d05; --bad:#d3384f;
+    --g0:#d3384f; --g1:#9c6d05; --g2:#3568dd; --g3:#0f9768;
+    --shadow:0 1px 2px rgba(16,24,40,.05), 0 14px 30px -20px rgba(16,24,40,.35);
   }
 }
 html[data-theme="dark"]{
-  --bg:#0f1115; --panel:#171a21; --panel-2:#1e222b; --line:#2a2f3a;
-  --fg:#e6e9ef; --fg-dim:#98a1b3; --fg-faint:#6b7385;
-  --accent:#6ea8fe; --accent-dim:#2f4a73;
-  --ok:#4ec9a0; --warn:#e0b155; --bad:#e06c75;
+  --bg:#0b0d12; --bg-2:#0f1219; --panel:#141822; --panel-2:#1b2030;
+  --panel-3:#212739;
+  --line:#242b3d; --line-2:#333c55;
+  --fg:#e8ecf5; --fg-dim:#9aa5bd; --fg-faint:#68738c;
+  --accent:#7aa2ff; --accent-2:#a78bfa; --accent-soft:#1c2743;
+  --ok:#3ddc97; --warn:#f0b849; --bad:#ff6b81;
+  --g0:#ff6b81; --g1:#f0b849; --g2:#7aa2ff; --g3:#3ddc97;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 12px 32px -18px rgba(0,0,0,.9);
 }
 html[data-theme="light"]{
-  --bg:#f6f7f9; --panel:#ffffff; --panel-2:#f0f2f6; --line:#dfe3ea;
-  --fg:#1c2027; --fg-dim:#5b6472; --fg-faint:#8b93a1;
-  --accent:#2f6fdb; --accent-dim:#cfe0fb;
-  --ok:#1f9d76; --warn:#a97a12; --bad:#c0392b;
+  --bg:#f4f6fb; --bg-2:#eef1f7; --panel:#ffffff; --panel-2:#f4f6fb;
+  --panel-3:#eaeef7;
+  --line:#e3e8f2; --line-2:#ccd4e4;
+  --fg:#141a26; --fg-dim:#586279; --fg-faint:#8b94a8;
+  --accent:#3568dd; --accent-2:#7c5cf0; --accent-soft:#e6edfd;
+  --ok:#0f9768; --warn:#9c6d05; --bad:#d3384f;
+  --g0:#d3384f; --g1:#9c6d05; --g2:#3568dd; --g3:#0f9768;
+  --shadow:0 1px 2px rgba(16,24,40,.05), 0 14px 30px -20px rgba(16,24,40,.35);
 }
 
 *{box-sizing:border-box}
+html,body{height:100%}
 body{
-  margin:0; background:var(--bg); color:var(--fg);
-  font-family:var(--sans); font-size:15px; line-height:1.6;
+  margin:0;background:var(--bg);color:var(--fg);
+  font-family:var(--sans);font-size:15px;line-height:1.62;
   -webkit-font-smoothing:antialiased;
 }
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer;border:none;background:none}
 a{color:var(--accent)}
+::selection{background:color-mix(in srgb,var(--accent) 35%,transparent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
 
-/* ---------------------------------------------------------------- 顶栏 */
-header{
-  display:flex;align-items:center;gap:14px;
-  padding:10px 18px;border-bottom:1px solid var(--line);
-  background:var(--panel);position:sticky;top:0;z-index:20;
+/* ------------------------------------------------------------- 骨架 */
+.shell{display:flex;min-height:100vh}
+.side{
+  flex:0 0 var(--side);width:var(--side);
+  background:linear-gradient(180deg,var(--panel),var(--bg-2));
+  border-right:1px solid var(--line);
+  position:sticky;top:0;height:100vh;
+  display:flex;flex-direction:column;
+  padding:16px 14px 12px;gap:13px;overflow:auto;
+  transition:flex-basis .18s ease,width .18s ease,padding .18s ease;
+  z-index:30;
 }
-.brand{display:flex;align-items:baseline;gap:8px;font-weight:650;letter-spacing:.2px}
-.brand b{font-size:17px}
-.brand span{color:var(--fg-faint);font-size:12px;font-weight:400}
-nav{display:flex;gap:2px;margin-left:10px}
-nav button{
-  padding:6px 13px;border-radius:8px;color:var(--fg-dim);font-size:14px;
+.side.collapsed{flex-basis:var(--side-collapsed);width:var(--side-collapsed);padding:16px 9px 12px}
+.side-head{display:flex;align-items:center;gap:8px;min-height:34px}
+.brand{display:flex;flex-direction:column;min-width:0;flex:1}
+.brand b{font-size:17px;font-weight:650;letter-spacing:.2px;line-height:1.2}
+.brand span{font-size:11.5px;color:var(--fg-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side.collapsed .brand{display:none}
+.side.collapsed .side-head{justify-content:center}
+
+.collapse{
+  flex:0 0 auto;width:30px;height:30px;border-radius:9px;color:var(--fg-faint);
+  display:grid;place-items:center;border:1px solid transparent;
 }
-nav button:hover{background:var(--panel-2);color:var(--fg)}
-nav button[aria-current="true"]{background:var(--accent-dim);color:var(--fg);font-weight:600}
-.spacer{flex:1}
+.collapse:hover{background:var(--panel-2);color:var(--fg);border-color:var(--line)}
+
+.side-nav{display:flex;flex-direction:column;gap:3px}
+.side-nav button{
+  display:flex;align-items:center;gap:10px;width:100%;
+  padding:9px 11px;border-radius:var(--radius-sm);
+  color:var(--fg-dim);font-size:14px;text-align:left;
+  border:1px solid transparent;transition:background .13s,color .13s;
+}
+.side-nav button:hover{background:var(--panel-2);color:var(--fg)}
+.side-nav button[aria-current="true"]{
+  background:var(--accent-soft);color:var(--fg);font-weight:600;
+  border-color:color-mix(in srgb,var(--accent) 30%,transparent);
+}
+.side-nav .ico{flex:0 0 auto;width:18px;height:18px;display:grid;place-items:center}
+.side-nav .label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side-nav .count{
+  font-family:var(--mono);font-size:11px;color:var(--fg-faint);
+  background:var(--panel-3);border-radius:20px;padding:1px 7px;
+  min-width:0;
+}
+.side-nav .count:empty{display:none}
+.side.collapsed .side-nav .label,
+.side.collapsed .side-nav .count{display:none}
+.side.collapsed .side-nav button{justify-content:center;padding:9px 6px}
+
+.panel{
+  border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:color-mix(in srgb,var(--panel-2) 70%,transparent);
+  padding:11px;
+}
+.panel-title{
+  font-size:11px;letter-spacing:1.2px;text-transform:uppercase;
+  color:var(--fg-faint);font-weight:600;margin-bottom:9px;
+}
+.side.collapsed .panel-title{display:none}
+.side.collapsed .panel{padding:8px 5px;background:transparent;border-color:transparent}
+
+/* 侧边栏里的评分键。竖排 —— 每一档都要写清「按下去会推到什么时候」，
+   横排四个在 266px 里挤不下。 */
+.grades{display:flex;flex-direction:column;gap:6px}
+.grade{
+  display:flex;align-items:center;gap:9px;width:100%;
+  padding:8px 10px;border-radius:var(--radius-xs);
+  border:1px solid var(--line);background:var(--panel);
+  text-align:left;transition:border-color .13s,background .13s,transform .08s;
+}
+.grade:hover{border-color:color-mix(in srgb,var(--gc) 60%,var(--line));
+             background:color-mix(in srgb,var(--gc) 8%,var(--panel))}
+.grade:active{transform:scale(.985)}
+.grade .num{
+  flex:0 0 auto;width:20px;height:20px;border-radius:6px;
+  display:grid;place-items:center;font-family:var(--mono);font-size:11.5px;
+  color:var(--gc);background:color-mix(in srgb,var(--gc) 16%,transparent);
+  border:1px solid color-mix(in srgb,var(--gc) 38%,transparent);
+}
+.grade .txt{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.28}
+.grade .txt b{font-size:13px;font-weight:600}
+.grade .txt span{font-size:11px;color:var(--fg-faint);font-family:var(--mono)}
+.grade[data-g="0"]{--gc:var(--g0)}
+.grade[data-g="1"]{--gc:var(--g1)}
+.grade[data-g="2"]{--gc:var(--g2)}
+.grade[data-g="3"]{--gc:var(--g3)}
+/* 翻面前这 3 档还没到能用的时候。**做成虚线而不是半透明** ——
+   半透明按钮看起来只是「有点淡」，加上手形光标就成了「点了没反应」，
+   正是 0.0.2 要修的那个 bug。虚线边框表达的是「还没到这一步」。 */
+.grade[data-pending="1"]{border-style:dashed;border-color:var(--line-2);background:transparent}
+.grade[data-pending="1"] .num{color:var(--fg-faint);background:transparent;
+                               border-color:var(--line-2)}
+.grade[data-pending="1"] .txt b{color:var(--fg-dim);font-weight:500}
+.grade[data-pending="1"]:hover{border-color:var(--accent);
+                               background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.side.collapsed .grade{justify-content:center;padding:6px 4px}
+.side.collapsed .grade .txt{display:none}
+.side.collapsed .grade .num{width:26px;height:26px;font-size:12px}
+
+.hotkeys{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--fg-dim)}
+.hotkeys div{display:flex;align-items:center;gap:7px}
+.kbd{
+  display:inline-block;min-width:19px;text-align:center;padding:1px 5px;
+  border-radius:5px;border:1px solid var(--line-2);background:var(--panel);
+  font-family:var(--mono);font-size:11px;color:var(--fg-dim);
+}
+.side.collapsed .hotkeys{display:none}
+
+.side-foot{margin-top:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:6px}
+.side.collapsed .side-foot{flex-direction:column;gap:6px}
 .badge{
-  font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:20px;
+  font-family:var(--mono);font-size:10.5px;padding:3px 8px;border-radius:20px;
   border:1px solid var(--line);color:var(--fg-faint);white-space:nowrap;
 }
-.badge.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
-.badge.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
-.iconbtn{padding:6px 10px;border-radius:8px;color:var(--fg-dim);font-size:13px}
-.iconbtn:hover{background:var(--panel-2);color:var(--fg)}
+.badge.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 38%,var(--line))}
+.badge.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 38%,var(--line))}
+.iconbtn{
+  width:30px;height:30px;border-radius:9px;color:var(--fg-dim);
+  display:grid;place-items:center;border:1px solid transparent;
+}
+.iconbtn:hover{background:var(--panel-2);color:var(--fg);border-color:var(--line)}
+.side.collapsed .badge{display:none}
 
-#banner{display:none;padding:9px 18px;font-size:13px;border-bottom:1px solid var(--line)}
-#banner.bad{display:block;background:color-mix(in srgb,var(--bad) 18%,var(--bg));color:var(--fg)}
-#banner.warn{display:block;background:color-mix(in srgb,var(--warn) 16%,var(--bg));color:var(--fg)}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+#banner{display:none;padding:10px 24px;font-size:13px;border-bottom:1px solid var(--line)}
+#banner.bad{display:block;background:color-mix(in srgb,var(--bad) 16%,var(--bg));color:var(--fg)}
+#banner.warn{display:block;background:color-mix(in srgb,var(--warn) 14%,var(--bg));color:var(--fg)}
+#banner.ok{display:block;background:color-mix(in srgb,var(--ok) 13%,var(--bg));color:var(--fg)}
+main{max-width:980px;width:100%;margin:0 auto;padding:28px 26px 96px}
 
-main{max-width:920px;margin:0 auto;padding:26px 18px 80px}
-h1{font-size:21px;margin:0 0 4px;font-weight:650}
-h2{font-size:16px;margin:26px 0 10px;font-weight:620}
-p.lead{color:var(--fg-dim);margin:0 0 18px;font-size:14px}
+/* ------------------------------------------------------------- 排版 */
+h1{font-size:23px;margin:0 0 5px;font-weight:650;letter-spacing:-.2px}
+h2{font-size:15.5px;margin:24px 0 10px;font-weight:620;letter-spacing:.1px}
+p.lead{color:var(--fg-dim);margin:0 0 20px;font-size:13.5px;max-width:74ch}
+.faint{color:var(--fg-faint);font-size:12.5px}
+.mono{font-family:var(--mono)}
 
+/* ------------------------------------------------------------- 通用块 */
 .card{
   background:var(--panel);border:1px solid var(--line);
   border-radius:var(--radius);padding:18px;margin-bottom:14px;
+  box-shadow:var(--shadow);
 }
 .card.tight{padding:14px}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .col{display:flex;flex-direction:column;gap:10px}
 .grow{flex:1;min-width:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
 
-label.field{display:block;margin-bottom:12px}
-label.field > span{display:block;font-size:12px;color:var(--fg-dim);margin-bottom:5px}
+label.field{display:block;margin-bottom:13px}
+label.field > span.lab{display:block;font-size:12px;color:var(--fg-dim);margin-bottom:5px;font-weight:500}
 input[type=text],input[type=password],input[type=number],select,textarea{
   width:100%;padding:9px 11px;border-radius:var(--radius-sm);
   border:1px solid var(--line);background:var(--panel-2);outline:none;
+  transition:border-color .13s,background .13s;
 }
-input:focus,select:focus,textarea:focus{border-color:var(--accent)}
-textarea{resize:vertical;min-height:56px}
+input:hover,select:hover,textarea:hover{border-color:var(--line-2)}
+input:focus,select:focus,textarea:focus{
+  border-color:var(--accent);background:var(--panel);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent);
+}
+textarea{resize:vertical;min-height:62px;line-height:1.6}
+select{cursor:pointer}
+input:disabled,select:disabled{opacity:.55;cursor:not-allowed}
 
 .btn{
-  padding:9px 16px;border-radius:var(--radius-sm);background:var(--panel-2);
-  border:1px solid var(--line);font-size:14px;white-space:nowrap;
+  display:inline-flex;align-items:center;gap:7px;justify-content:center;
+  padding:9px 15px;border-radius:var(--radius-sm);background:var(--panel-2);
+  border:1px solid var(--line);font-size:13.5px;white-space:nowrap;font-weight:500;
+  transition:border-color .13s,background .13s,transform .08s,filter .13s;
 }
-.btn:hover{border-color:var(--accent)}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#08111f;font-weight:650}
-.btn.primary:hover{filter:brightness(1.08)}
-.btn.ghost{background:transparent}
-.btn.danger:hover{border-color:var(--bad);color:var(--bad)}
-.btn:disabled{opacity:.45;cursor:not-allowed}
-.btn:disabled:hover{border-color:var(--line)}
+.btn:hover{border-color:var(--line-2);background:var(--panel-3)}
+.btn:active{transform:translateY(1px)}
+.btn .ico{width:16px;height:16px;display:grid;place-items:center}
+.btn.primary{
+  background:linear-gradient(180deg,var(--accent),
+             color-mix(in srgb,var(--accent) 82%,#000 18%));
+  border-color:var(--accent);color:#08111f;font-weight:650;
+}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{background:transparent;border-color:transparent}
+.btn.ghost:hover{background:var(--panel-2);border-color:var(--line)}
+.btn.danger:hover{border-color:var(--bad);color:var(--bad);
+                  background:color-mix(in srgb,var(--bad) 8%,transparent)}
+.btn.sm{padding:6px 11px;font-size:12.5px;border-radius:var(--radius-xs)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none;filter:none}
 
-.muted{color:var(--fg-dim)}
-.faint{color:var(--fg-faint);font-size:12.5px}
-.mono{font-family:var(--mono)}
+.seg{display:flex;gap:4px;padding:3px;border-radius:var(--radius-sm);
+     background:var(--panel-2);border:1px solid var(--line);flex-wrap:wrap}
+.seg button{
+  flex:1;min-width:88px;padding:8px 10px;border-radius:7px;font-size:13px;
+  color:var(--fg-dim);border:1px solid transparent;
+}
+.seg button:hover{color:var(--fg);background:var(--panel-3)}
+.seg button[aria-pressed="true"]{
+  background:var(--panel);color:var(--fg);font-weight:600;
+  border-color:color-mix(in srgb,var(--accent) 40%,var(--line));
+  box-shadow:0 1px 2px rgba(0,0,0,.15);
+}
+
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{
+  font-size:11.5px;padding:3px 9px;border-radius:20px;
+  border:1px solid var(--line);color:var(--fg-dim);white-space:nowrap;
+}
+.chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 38%,var(--line))}
+.chip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 38%,var(--line))}
+.chip.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 38%,var(--line))}
+.chip.accent{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 38%,var(--line))}
+
+.toggle{
+  display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--fg-dim);
+  padding:6px 11px;border-radius:20px;border:1px solid var(--line);background:var(--panel-2);
+}
+.toggle:hover{border-color:var(--line-2);color:var(--fg)}
+.toggle[aria-pressed="true"]{
+  color:var(--fg);border-color:color-mix(in srgb,var(--accent) 45%,var(--line));
+  background:var(--accent-soft);font-weight:500;
+}
+
 .hint{
   font-size:12.5px;color:var(--fg-dim);background:var(--panel-2);
-  border-left:2px solid var(--accent-dim);padding:7px 11px;border-radius:0 6px 6px 0;
-  margin-top:10px;
+  border-left:2px solid color-mix(in srgb,var(--accent) 55%,transparent);
+  padding:8px 12px;border-radius:0 8px 8px 0;margin-top:10px;
 }
+.hint.ok{border-left-color:var(--ok)}
 .err{
-  font-size:13px;color:var(--fg);background:color-mix(in srgb,var(--bad) 15%,var(--bg));
-  border-left:2px solid var(--bad);padding:9px 12px;border-radius:0 6px 6px 0;margin-top:10px;
+  font-size:13px;color:var(--fg);background:color-mix(in srgb,var(--bad) 13%,var(--bg));
+  border-left:2px solid var(--bad);padding:10px 13px;border-radius:0 8px 8px 0;margin-top:10px;
 }
-.err b{display:block;margin-bottom:2px}
+.err b{display:block;margin-bottom:3px}
+.err .next{font-size:12.5px;color:var(--fg-dim);margin-top:5px}
 
-/* ------------------------------------------------------------ 训练界面 */
-.session{display:flex;flex-direction:column;gap:14px}
-.sessionbar{display:flex;align-items:center;gap:12px;font-size:13px;color:var(--fg-dim)}
-.progress{height:4px;background:var(--panel-2);border-radius:3px;flex:1;overflow:hidden}
-.progress i{display:block;height:100%;background:var(--accent);border-radius:3px;transition:width .25s}
-
-.stage{
-  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
-  padding:30px 24px;min-height:300px;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;text-align:center;gap:18px;
-}
-.stage .chan{
-  font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent);
-  font-weight:600;
-}
-.stage .prompt-en{
-  font-size:30px;line-height:1.4;font-weight:500;letter-spacing:.2px;max-width:660px;
-}
-.stage .prompt-zh{font-size:23px;line-height:1.6;max-width:600px}
-.stage .prompt-scene{font-size:19px;line-height:1.65;max-width:620px;color:var(--fg)}
-.stage .task{color:var(--fg-dim);font-size:14px;max-width:560px}
-.stage hr{width:70%;border:none;border-top:1px solid var(--line);margin:2px 0}
-.answer{font-size:25px;font-weight:500;line-height:1.45;max-width:660px}
-.scenebox{font-size:14px;color:var(--fg-dim);max-width:620px;line-height:1.7}
-.scenebox em{color:var(--fg);font-style:normal}
-
-.playbtn{
-  width:96px;height:96px;border-radius:50%;background:var(--accent-dim);
-  display:flex;align-items:center;justify-content:center;font-size:36px;
-  border:1px solid var(--accent);transition:transform .1s;
-}
-.playbtn:hover{transform:scale(1.04)}
-.playbtn.small{width:44px;height:44px;font-size:19px}
-.playbtn:disabled{opacity:.4;transform:none;cursor:not-allowed}
-
-.grades{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
-.grade{
-  padding:11px 8px;border-radius:var(--radius-sm);border:1px solid var(--line);
-  background:var(--panel);text-align:center;line-height:1.35;
-}
-.grade:hover{border-color:var(--accent)}
-.grade b{display:block;font-size:14px;font-weight:600}
-.grade span{display:block;font-size:11.5px;color:var(--fg-faint);margin-top:2px}
-.grade[data-g="0"]:hover{border-color:var(--bad)}
-
-.typerow{width:100%;max-width:660px;display:flex;flex-direction:column;gap:10px}
-.typerow input{
-  font-family:var(--mono);font-size:18px;padding:13px 15px;text-align:center;
-}
-.diff{font-family:var(--mono);font-size:19px;letter-spacing:.5px;word-break:break-word}
-.diff .hit{color:var(--ok)}
-.diff .miss{color:var(--bad);text-decoration:underline wavy}
-.diff .extra{color:var(--warn);opacity:.7}
-
-.kbd{
-  display:inline-block;padding:1px 6px;border-radius:5px;border:1px solid var(--line);
-  background:var(--panel-2);font-family:var(--mono);font-size:11.5px;color:var(--fg-dim);
-}
-
-/* ------------------------------------------------------------ 训练包 */
-.lesson{
-  display:flex;align-items:flex-start;gap:12px;padding:13px 15px;
-  border:1px solid var(--line);border-radius:var(--radius-sm);
-  background:var(--panel);margin-bottom:9px;
-}
-.lesson .t{font-weight:600}
-.lesson .meta{font-size:12.5px;color:var(--fg-dim);margin-top:3px}
-.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-.chip{
-  font-size:11.5px;padding:2px 8px;border-radius:20px;
-  border:1px solid var(--line);color:var(--fg-dim);
-}
-.chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
-.chip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}
-.chip.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
-
-.example{
-  border:1px solid var(--line);border-radius:var(--radius-sm);
-  padding:13px 15px;margin-bottom:10px;background:var(--panel);
-}
-.example .en{font-size:17px;font-weight:500}
-.example .zh{font-size:13.5px;color:var(--fg-dim);margin-top:5px}
-.example .variants{font-size:12.5px;color:var(--fg-faint);margin-top:6px}
-.chanbtns{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
-.chanbtns button{
-  font-size:12.5px;padding:4px 11px;border-radius:20px;
-  border:1px solid var(--line);color:var(--fg-dim);
-}
-.chanbtns button:hover{border-color:var(--accent);color:var(--fg)}
-
-table.self{width:100%;border-collapse:collapse;font-size:13.5px}
-table.self td{padding:7px 4px;border-bottom:1px solid var(--line);vertical-align:top}
-table.self td:first-child{white-space:nowrap;color:var(--fg-dim);padding-right:14px}
+.empty{text-align:center;color:var(--fg-dim);padding:44px 20px}
+.empty .art{color:var(--fg-faint);opacity:.5;margin-bottom:14px;display:flex;justify-content:center}
+.empty b{display:block;font-size:16.5px;color:var(--fg);margin-bottom:7px;font-weight:600}
+.empty .faint{max-width:44ch;margin:0 auto}
 
 .spin{
   display:inline-block;width:13px;height:13px;border-radius:50%;
-  border:2px solid var(--line);border-top-color:var(--accent);
+  border:2px solid var(--line-2);border-top-color:var(--accent);
   animation:spin .7s linear infinite;vertical-align:-2px;
 }
 @keyframes spin{to{transform:rotate(360deg)}}
+.bar{height:5px;background:var(--panel-3);border-radius:4px;overflow:hidden;width:100%}
+.bar i{display:block;height:100%;border-radius:4px;
+       background:linear-gradient(90deg,var(--accent),var(--accent-2));
+       transition:width .3s ease}
 
-.empty{text-align:center;color:var(--fg-dim);padding:46px 20px}
-.empty b{display:block;font-size:16px;color:var(--fg);margin-bottom:6px;font-weight:600}
+table.self{width:100%;border-collapse:collapse;font-size:13px}
+table.self td{padding:8px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+table.self tr:last-child td{border-bottom:none}
+table.self td:first-child{white-space:nowrap;color:var(--fg-dim);padding-right:16px;width:1%}
+
+/* --------------------------------------------------------- 训练界面 */
+.session{display:flex;flex-direction:column;gap:14px}
+.sessionbar{display:flex;align-items:center;gap:12px;font-size:12.5px;color:var(--fg-dim)}
+.sessionbar .bar{flex:1}
+
+.stage{
+  background:
+    radial-gradient(120% 90% at 50% -20%,color-mix(in srgb,var(--accent) 9%,transparent),transparent 60%),
+    var(--panel);
+  border:1px solid var(--line);border-radius:var(--radius);
+  padding:34px 26px;min-height:320px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;gap:16px;
+  box-shadow:var(--shadow);animation:rise .22s ease both;
+}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){
+  .stage{animation:none}
+  .side{transition:none}
+  .bar i{transition:none}
+}
+.stage .chan{
+  font-size:11px;letter-spacing:1.6px;text-transform:uppercase;
+  color:var(--accent);font-weight:650;
+  border:1px solid color-mix(in srgb,var(--accent) 34%,transparent);
+  background:color-mix(in srgb,var(--accent) 9%,transparent);
+  padding:3px 11px;border-radius:20px;
+}
+.stage .prompt-en{font-size:31px;line-height:1.42;font-weight:500;letter-spacing:.1px;max-width:680px}
+.stage .prompt-scene{font-size:19px;line-height:1.7;max-width:640px;color:var(--fg)}
+.stage .task{color:var(--fg-dim);font-size:13.5px;max-width:600px}
+.stage hr{width:64%;border:none;border-top:1px solid var(--line);margin:2px 0}
+.answer{font-size:26px;font-weight:500;line-height:1.45;max-width:680px}
+.scenebox{font-size:13.5px;color:var(--fg-dim);max-width:640px;line-height:1.75;text-align:left}
+.scenebox em{color:var(--fg);font-style:normal}
+
+.sceneimg{
+  max-width:100%;width:auto;max-height:262px;border-radius:12px;
+  border:1px solid var(--line);box-shadow:var(--shadow);object-fit:cover;
+  background:var(--panel-3);display:block;
+}
+.imgwrap{display:flex;flex-direction:column;align-items:center;gap:7px;max-width:100%}
+.imgwrap .cap{font-size:11.5px;color:var(--fg-faint)}
+.imgfail{
+  width:100%;max-width:420px;height:92px;border-radius:12px;
+  border:1px dashed var(--line-2);display:flex;align-items:center;justify-content:center;
+  color:var(--fg-faint);font-size:12.5px;
+}
+
+.playbtn{
+  width:92px;height:92px;border-radius:50%;
+  background:radial-gradient(circle at 50% 30%,color-mix(in srgb,var(--accent) 34%,transparent),transparent 70%),var(--accent-soft);
+  display:flex;align-items:center;justify-content:center;
+  border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);
+  color:var(--accent);transition:transform .1s,filter .1s;
+}
+.playbtn:hover{transform:scale(1.045);filter:brightness(1.08)}
+.playbtn:active{transform:scale(.98)}
+.playbtn.small{width:40px;height:40px}
+.playbtn.small .ico{width:17px;height:17px}
+.playbtn:disabled{opacity:.4;transform:none;cursor:not-allowed}
+
+.typerow{width:100%;max-width:680px;display:flex;flex-direction:column;gap:10px}
+.typerow input{font-family:var(--mono);font-size:18px;padding:13px 15px;text-align:center}
+.diff{font-family:var(--mono);font-size:19px;letter-spacing:.4px;word-break:break-word;max-width:680px}
+.diff .hit{color:var(--ok)}
+.diff .miss{color:var(--bad);text-decoration:underline wavy;text-decoration-thickness:1px}
+.diff .extra{color:var(--warn);opacity:.75}
+
+.centernote{
+  display:flex;align-items:center;gap:9px;justify-content:center;
+  font-size:12.5px;color:var(--fg-dim);max-width:640px;text-align:center;
+}
+.centernote b{color:var(--accent);font-weight:600}
+
+/* ----------------------------------------------------------- 训练包 */
+.lesson{
+  display:flex;align-items:flex-start;gap:13px;padding:14px 16px;
+  border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:var(--panel);margin-bottom:9px;
+  transition:border-color .13s;
+}
+.lesson:hover{border-color:var(--line-2)}
+.lesson .t{font-weight:600;font-size:14.5px}
+.lesson .meta{font-size:12px;color:var(--fg-dim);margin:3px 0 8px}
+.lesson .acts{display:flex;flex-direction:column;gap:6px;align-items:stretch}
+@media (max-width:720px){
+  .lesson{flex-direction:column}
+  .lesson .acts{flex-direction:row;flex-wrap:wrap}
+  .side{--side:220px}
+}
+
+.example{
+  border:1px solid var(--line);border-radius:var(--radius-sm);
+  padding:14px 16px;margin-bottom:11px;background:var(--panel);
+}
+.example .en{font-size:17px;font-weight:500;line-height:1.45}
+.example .zh{font-size:13px;color:var(--fg-dim);margin-top:5px}
+.example .variants{font-size:12px;color:var(--fg-faint);margin-top:7px;line-height:1.6}
+.example .thumb{
+  width:104px;height:74px;object-fit:cover;border-radius:9px;
+  border:1px solid var(--line);flex:0 0 auto;cursor:zoom-in;
+}
+.chanbtns{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.chanbtns button{
+  font-size:12px;padding:5px 12px;border-radius:20px;
+  border:1px solid var(--line);color:var(--fg-dim);
+  transition:border-color .13s,color .13s,background .13s;
+}
+.chanbtns button:hover{
+  border-color:var(--accent);color:var(--fg);
+  background:color-mix(in srgb,var(--accent) 9%,transparent);
+}
+
+/* ------------------------------------------------------------- 大纲 */
+.outline-item{
+  display:flex;gap:11px;align-items:flex-start;padding:11px 13px;
+  border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:var(--panel);margin-bottom:7px;transition:opacity .13s,border-color .13s;
+}
+.outline-item.off{opacity:.42}
+.outline-item .pick{
+  flex:0 0 auto;width:19px;height:19px;margin-top:2px;border-radius:6px;
+  border:1px solid var(--line-2);display:grid;place-items:center;color:transparent;
+  background:var(--panel-2);
+}
+.outline-item .pick[aria-pressed="true"]{
+  background:var(--accent);border-color:var(--accent);color:#08111f;
+}
+.outline-item .body{flex:1;min-width:0}
+.outline-item .target{font-size:15px;font-weight:600}
+.outline-item .why{font-size:12.5px;color:var(--fg-dim);margin-top:2px}
+.outline-item .tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+
+.plan{
+  border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:var(--panel);padding:15px 16px;margin-bottom:10px;
+}
+.plan .head{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.plan .title{font-weight:620;font-size:15px}
+.plan .sub{font-size:12.5px;color:var(--fg-dim);margin-top:3px}
+
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px;font-size:12.5px;margin:0}
+.kv dt{color:var(--fg-faint);white-space:nowrap}
+.kv dd{margin:0;color:var(--fg-dim);word-break:break-all;font-family:var(--mono)}
 </style>
 </head>
 <body>
 
-<header>
-  <div class="brand"><b>Etude</b><span>句子五通道语言训练器</span></div>
-  <nav id="nav">
-    <button data-view="study">训练</button>
-    <button data-view="lessons">训练包</button>
-    <button data-view="settings">设置</button>
-  </nav>
-  <div class="spacer"></div>
-  <span class="badge" id="health">连接中…</span>
-  <button class="iconbtn" id="theme" title="切换深浅色">◐</button>
-</header>
-<div id="banner"></div>
+<div class="shell">
+  <aside class="side" id="side">
+    <div class="side-head">
+      <div class="brand"><b>Etude</b><span>句子五通道语言训练器</span></div>
+      <button class="collapse" id="collapse" title="收起/展开侧边栏" aria-expanded="true"></button>
+    </div>
 
-<main id="app"></main>
+    <nav class="side-nav" id="nav">
+      <button data-view="study"><span class="ico" data-icon="study"></span><span class="label">训练</span><span class="count" id="nav-due"></span></button>
+      <button data-view="lessons"><span class="ico" data-icon="lessons"></span><span class="label">训练包</span><span class="count" id="nav-lessons"></span></button>
+      <button data-view="plans"><span class="ico" data-icon="plans"></span><span class="label">目标</span><span class="count" id="nav-plans"></span></button>
+      <button data-view="settings"><span class="ico" data-icon="settings"></span><span class="label">设置</span></button>
+    </nav>
+
+    <!-- 交互键都收在这里。0.0.2 之前它们散在页面底部，
+         卡片一长就得往下翻才能评分。 -->
+    <div id="side-actions"></div>
+
+    <div class="side-foot">
+      <span class="badge" id="health">连接中…</span>
+      <button class="iconbtn" id="theme" title="切换深浅色"></button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div id="banner"></div>
+    <main id="app"></main>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -260,11 +517,62 @@ table.self td:first-child{white-space:nowrap;color:var(--fg-dim);padding-right:1
 // 必须和后端 app/__init__.py 里的 __version__ 一致。
 // 有测试盯着这一条 —— 否则这行常量会变成天天误报的噪音，
 // 用户很快学会无视它，那还不如没有。
-const APP_VERSION = "0.0.1";
+const APP_VERSION = "0.0.2";
 
 // ----------------------------------------------------------------- 工具
 
 const $ = (sel, root) => (root || document).querySelector(sel);
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+// 图标全部内联。不用 emoji：它们在不同系统上长得完全不同，
+// 而且在一个严肃的训练工具里显得吵。
+const ICONS = {
+  study:    "M12 3a9 9 0 100 18 9 9 0 000-18z M12 8a4 4 0 100 8 4 4 0 000-8z",
+  lessons:  "M12 3l9 5-9 5-9-5 9-5z M3 13l9 5 9-5 M3 17l9 5 9-5",
+  plans:    "M5 21V4 M5 4h12l-1.6 4L17 12H5",
+  settings: "M12 9a3 3 0 100 6 3 3 0 000-6z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M19.1 4.9L17 7 M7 17l-2.1 2.1",
+  left:     "M15 6l-6 6 6 6",
+  right:    "M9 6l6 6-6 6",
+  sun:      "M12 8a4 4 0 100 8 4 4 0 000-8z M12 2v2 M12 20v2 M2 12h2 M20 12h2 M4.9 4.9l1.4 1.4 M17.7 17.7l1.4 1.4 M19.1 4.9l-1.4 1.4 M6.3 17.7l-1.4 1.4",
+  moon:     "M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z",
+  play:     "M11 5L6 9H3v6h3l5 4V5z M16 9a4 4 0 010 6",
+  image:    "M3 5h18v14H3z M3 15.5l5-5 4 4 3-3 6 6",
+  plus:     "M12 5v14 M5 12h14",
+  trash:    "M4 7h16 M9 7V4.8h6V7 M6.5 7l1 13h9l1-13",
+  refresh:  "M20.5 12a8.5 8.5 0 11-2.5-6 M20.5 3.5v4.5h-4.5",
+  check:    "M5 12.5l4.5 4.5L19 7",
+  drive:    "M3 6h18v5H3z M3 13h18v5H3z M7 8.5h.01 M7 15.5h.01",
+  spark:    "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z",
+  book:     "M4 4h7v16H4z M13 4h7v16h-7z",
+  wand:     "M15 4V2 M15 10V8 M11 6H9 M21 6h-2 M17.8 3.2l-1.4 1.4 M17.8 8.8l-1.4-1.4 M12.2 3.2l1.4 1.4 M3 21l7.5-7.5 M12.2 8.8l1.4-1.4",
+};
+
+function icon(name, size) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.8");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("width", String(size || 18));
+  svg.setAttribute("height", String(size || 18));
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", ICONS[name] || ICONS.spark);
+  svg.appendChild(path);
+  return svg;
+}
+
+// 把 markup 里写好的 <span data-icon="x"> 换成真图标。
+// 侧边栏的骨架写在 HTML 里（首屏不会空一下），图标在这里补。
+function paintIcons(root) {
+  for (const node of (root || document).querySelectorAll("[data-icon]")) {
+    if (node.firstChild) continue;
+    const size = node.classList.contains("ico") ? 18 : 16;
+    node.appendChild(icon(node.dataset.icon, size));
+  }
+}
 
 function el(tag, attrs, children) {
   const node = document.createElement(tag);
@@ -292,6 +600,14 @@ function el(tag, attrs, children) {
 
 function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
+function btn(label, opts, iconName) {
+  const o = Object.assign({ class: "btn" }, opts || {});
+  const node = el("button", o);
+  if (iconName) node.appendChild(el("span", { class: "ico" }, [icon(iconName, 16)]));
+  if (label) node.appendChild(document.createTextNode(label));
+  return node;
+}
+
 // 所有请求走这里，统一把「错误 + 下一步方向」画成同一种块。
 async function api(path, options) {
   const opts = Object.assign({ headers: { "Content-Type": "application/json" } }, options || {});
@@ -311,7 +627,7 @@ async function api(path, options) {
 function errorBlock(err) {
   const box = el("div", { class: "err" });
   box.appendChild(el("b", { text: err.message || String(err) }));
-  if (err.hint) box.appendChild(el("div", { text: err.hint }));
+  if (err.hint) box.appendChild(el("div", { class: "next", text: "→ " + err.hint }));
   return box;
 }
 
@@ -325,6 +641,22 @@ function humanTime(iso) {
   return Math.floor(diff / 86400) + " 天前";
 }
 
+function humanSize(bytes) {
+  if (bytes === null || bytes === undefined || bytes < 0) return "未知";
+  if (bytes < 1024) return bytes + " B";
+  const kb = bytes / 1024;
+  if (kb < 1024) return kb.toFixed(0) + " KB";
+  const mb = kb / 1024;
+  if (mb < 1024) return mb.toFixed(1) + " MB";
+  return (mb / 1024).toFixed(2) + " GB";
+}
+
+function spin(text) {
+  return el("div", { class: "row" }, [
+    el("i", { class: "spin" }), el("span", { class: "faint", text: text || "处理中…" }),
+  ]);
+}
+
 // ------------------------------------------------------------- 状态与外壳
 
 const state = {
@@ -332,6 +664,8 @@ const state = {
   health: null,
   config: null,
   catalog: null,
+  plans: [],
+  openPlan: null,
   queue: [],
   cursor: 0,
   current: null,       // 当前卡片的完整数据
@@ -344,6 +678,11 @@ const state = {
   variantIndex: 0,
   busy: false,
   sessionDone: 0,
+  stats: null,
+  // 侧边栏收起来的状态。存 localStorage，重开还是收着的。
+  sideCollapsed: false,
+  // 翻面前点了「吃力/正常/秒答」时给一句提醒，免得用户以为没反应。
+  gradeNote: "",
 };
 
 function setBanner(level, html) {
@@ -353,16 +692,18 @@ function setBanner(level, html) {
   if (level && html) banner.appendChild(typeof html === "string" ? document.createTextNode(html) : html);
 }
 
-const VIEWS = ["study", "lessons", "settings"];
+const VIEWS = ["study", "lessons", "plans", "settings"];
+const VIEW_LABEL = { study: "训练", lessons: "训练包", plans: "目标", settings: "设置" };
 
 function setView(view) {
   if (VIEWS.indexOf(view) < 0) view = "study";
   state.view = view;
+  if (view !== "plans") state.openPlan = null;
   // 地址栏跟着走：刷新后还停在同一页，也能被直接链接过来。
   // 在这里改 hash 会触发 hashchange，靠下面那个比对把重复渲染挡掉。
   if (location.hash.slice(1) !== view) location.hash = view;
-  for (const btn of document.querySelectorAll("#nav button")) {
-    btn.setAttribute("aria-current", String(btn.dataset.view === view));
+  for (const b of document.querySelectorAll("#nav button")) {
+    b.setAttribute("aria-current", String(b.dataset.view === view));
   }
   render();
 }
@@ -370,6 +711,23 @@ function setView(view) {
 function viewFromHash() {
   const name = location.hash.slice(1);
   return VIEWS.indexOf(name) >= 0 ? name : "study";
+}
+
+function toggleSide() {
+  state.sideCollapsed = !state.sideCollapsed;
+  applySide();
+  try { localStorage.setItem("etude-side", state.sideCollapsed ? "collapsed" : "open"); }
+  catch (e) { /* 隐私模式下写不了，忽略 */ }
+}
+
+function applySide() {
+  const side = $("#side");
+  side.classList.toggle("collapsed", state.sideCollapsed);
+  const node = $("#collapse");
+  clear(node);
+  node.appendChild(icon(state.sideCollapsed ? "right" : "left", 16));
+  node.setAttribute("aria-expanded", String(!state.sideCollapsed));
+  node.title = state.sideCollapsed ? "展开侧边栏" : "收起侧边栏";
 }
 
 // --------------------------------------------------------------- 训练视图
@@ -393,8 +751,14 @@ const CHANNEL_TIPS = {
   build: "换掉一个成分，造出一个新句子。造的句子要能出声念出来。",
 };
 
+const GRADE_LABEL = ["没想起来", "吃力", "正常", "秒答"];
+
 function audioPath(name) {
   return "/api/audio/" + encodeURIComponent(name);
+}
+
+function imagePath(name) {
+  return "/api/images/" + encodeURIComponent(name);
 }
 
 let currentAudio = null;
@@ -406,20 +770,39 @@ function playAudio(name) {
   return true;
 }
 
+// 场景配图。**文件不在了要能自己退回去** —— 数据目录被搬过、
+// 或者某次生成失败，都会留一个空的 <img>，看起来就是「破了」。
+function sceneImage(ex, capText) {
+  if (!ex || !ex.scene_image) return null;
+  const img = el("img", {
+    class: "sceneimg", src: imagePath(ex.scene_image), alt: "场景配图",
+    loading: "lazy", referrerpolicy: "no-referrer",
+  });
+  const wrap = el("div", { class: "imgwrap" }, [img]);
+  img.addEventListener("error", () => {
+    clear(wrap);
+    wrap.appendChild(el("div", { class: "imgfail", text: "这张场景图取不到了（文件可能被清理过）" }));
+  });
+  if (capText) wrap.appendChild(el("div", { class: "cap", text: capText }));
+  return wrap;
+}
+
 function renderStudy(main) {
   const wrap = el("div", { class: "session" });
 
   if (!state.queue.length) {
-    const box = el("div", { class: "empty" }, [
-      el("b", { text: "今天没有待练的卡了" }),
-      el("div", { text: "可以去「训练包」里自由练，或者生成一个新包。" }),
-    ]);
-    wrap.appendChild(box);
-    const row = el("div", { class: "row" }, [
-      el("button", { class: "btn primary", onClick: () => setView("lessons"), text: "去生成训练包" }),
-      el("button", { class: "btn", onClick: loadQueue, text: "刷新队列" }),
-    ]);
-    wrap.appendChild(row);
+    wrap.appendChild(el("div", { class: "card" }, [
+      el("div", { class: "empty" }, [
+        el("div", { class: "art" }, [icon("spark", 44)]),
+        el("b", { text: "今天没有待练的卡了" }),
+        el("div", { class: "faint", text: "可以去「训练包」里自由练，或者用「目标」批量储备素材。" }),
+      ]),
+    ]));
+    wrap.appendChild(el("div", { class: "row" }, [
+      btn("去生成训练包", { class: "btn primary", onClick: () => setView("lessons") }, "plus"),
+      btn("去设学习目标", { class: "btn", onClick: () => setView("plans") }, "plans"),
+      btn("刷新队列", { class: "btn ghost", onClick: loadQueue }, "refresh"),
+    ]));
     main.appendChild(wrap);
     return;
   }
@@ -427,26 +810,29 @@ function renderStudy(main) {
   const total = state.queue.length;
   const pos = Math.min(state.cursor + 1, total);
 
-  const bar = el("div", { class: "sessionbar" }, [
+  wrap.appendChild(el("div", { class: "sessionbar" }, [
     el("span", { text: "第 " + pos + " / " + total + " 张" }),
-  ]);
-  const prog = el("div", { class: "progress" }, [
-    el("i", { style: "width:" + Math.round(((pos - 1) / total) * 100) + "%" }),
-  ]);
-  bar.appendChild(prog);
-  bar.appendChild(el("span", { text: "本次已练 " + state.sessionDone }));
-  wrap.appendChild(bar);
+    el("div", { class: "bar" }, [
+      el("i", { style: "width:" + Math.round(((pos - 1) / total) * 100) + "%" }),
+    ]),
+    el("span", { text: "本次已练 " + state.sessionDone }),
+  ]));
 
   if (state.cursor >= total) {
-    const done = el("div", { class: "stage" }, [
+    wrap.appendChild(el("div", { class: "stage" }, [
       el("div", { class: "chan", text: "本轮结束" }),
-      el("div", { class: "prompt-zh", text: "练完了 " + state.sessionDone + " 张卡。" }),
-      el("div", { class: "task", text: "理论要的是「不同例子的重复」——明天再来，遇到的是新的例子，不是今天这几句。" }),
-    ]);
-    wrap.appendChild(done);
+      el("div", { class: "answer", text: "练完了 " + state.sessionDone + " 张卡。" }),
+      el("div", {
+        class: "task",
+        text: "理论要的是「不同例子的重复」——明天再来，遇到的是新的例子，不是今天这几句。",
+      }),
+    ]));
     wrap.appendChild(el("div", { class: "row" }, [
-      el("button", { class: "btn primary", onClick: () => { state.cursor = 0; state.sessionDone = 0; loadQueue(); }, text: "刷新队列" }),
-      el("button", { class: "btn", onClick: () => setView("lessons"), text: "回训练包" }),
+      btn("刷新队列", {
+        class: "btn primary",
+        onClick: () => { state.cursor = 0; state.sessionDone = 0; loadQueue(); },
+      }, "refresh"),
+      btn("回训练包", { class: "btn", onClick: () => setView("lessons") }),
     ]));
     main.appendChild(wrap);
     return;
@@ -454,7 +840,10 @@ function renderStudy(main) {
 
   const entry = state.queue[state.cursor];
   if (!state.current || state.current.card.id !== entry.id) {
-    wrap.appendChild(el("div", { class: "stage" }, [el("div", { class: "spin" }), el("div", { class: "task", text: "正在取这张卡…" })]));
+    wrap.appendChild(el("div", { class: "stage" }, [
+      el("div", { class: "spin" }),
+      el("div", { class: "task", text: "正在取这张卡…" }),
+    ]));
     main.appendChild(wrap);
     fetchCard(entry.id);
     return;
@@ -462,11 +851,13 @@ function renderStudy(main) {
 
   const data = state.current;
   const card = data.card;
-  const lesson = data.lesson || {};
   const ex = data.example;
 
   const stage = el("div", { class: "stage" });
   stage.appendChild(el("div", { class: "chan", text: CHANNEL_LABEL[card.channel] || card.channel }));
+  if (data.lesson && data.lesson.target) {
+    stage.appendChild(el("div", { class: "faint mono", text: data.lesson.target }));
+  }
 
   if (card.channel === "read") buildRead(stage, data);
   else if (card.channel === "listen") buildListen(stage, data);
@@ -475,24 +866,34 @@ function renderStudy(main) {
   else buildBuild(stage, data);
 
   wrap.appendChild(stage);
-  wrap.appendChild(gradeRow(card, data.srs_preview || {}));
-  wrap.appendChild(el("div", { class: "faint", style: "text-align:center" }, [
-    el("span", { class: "kbd", text: "空格" }), " 翻面　",
-    el("span", { class: "kbd", text: "1" }), " 没想起来　",
-    el("span", { class: "kbd", text: "2" }), " 吃力　",
-    el("span", { class: "kbd", text: "3" }), " 正常　",
-    el("span", { class: "kbd", text: "4" }), " 秒答",
-  ]));
+  wrap.appendChild(el("div", {
+    class: "centernote",
+    text: state.revealed
+      ? "左边的评分键现在四档都能用了 —— 键盘 1–4 也行。"
+      : "左边现在可以直接评「没想起来」；评其他三档会先让你核对答案。",
+  }));
 
   main.appendChild(wrap);
 }
 
 function sceneBox(lesson, ex) {
-  return el("div", { class: "scenebox" }, [
-    el("div", { text: lesson.target ? "目标：" + lesson.target : "" }),
-    el("div", { style: "margin-top:6px" }, [el("em", { text: pickZh(ex) || "（这条没有场景描述）" })]),
-    ex && ex.scene_en ? el("div", { style: "margin-top:6px;opacity:.75", text: ex.scene_en }) : null,
-    ex && ex.register ? el("div", { style: "margin-top:6px", text: "语域：" + ex.register }) : null,
+  const parts = [];
+  if (lesson && lesson.target) parts.push(el("div", { class: "faint", text: "目标：" + lesson.target }));
+  parts.push(el("div", { style: "margin-top:6px" }, [
+    el("em", { text: pickZh(ex) || "（这条没有场景描述）" }),
+  ]));
+  if (ex && ex.scene_en) {
+    parts.push(el("div", { style: "margin-top:6px;opacity:.75", text: ex.scene_en }));
+  }
+  if (ex && ex.register) parts.push(el("div", { style: "margin-top:6px", text: "语域：" + ex.register }));
+
+  // 不带「配图来源关键词」那行字：训练卡是练习的地方，检索词是调试信息，
+  // 摆在这里只会打断「看到图 → 冒出意思」那一下。
+  // 想查关键词去训练包详情页 —— 那里才是修素材的地方。
+  const img = sceneImage(ex);
+  return el("div", { class: "col", style: "align-items:center;gap:12px" }, [
+    img,
+    el("div", { class: "scenebox" }, parts),
   ]);
 }
 
@@ -514,7 +915,7 @@ function buildRead(stage, data) {
   stage.appendChild(el("div", { class: "prompt-en", text: ex ? ex.sentence : "" }));
   if (!state.revealed) {
     stage.appendChild(el("div", { class: "task", text: CHANNEL_TIPS.read }));
-    stage.appendChild(el("button", { class: "btn", onClick: reveal, text: "想好了，看场景" }));
+    stage.appendChild(btn("想好了，看场景", { class: "btn primary", onClick: reveal }));
   } else {
     stage.appendChild(el("hr"));
     stage.appendChild(sceneBox(data.lesson, ex));
@@ -524,18 +925,22 @@ function buildRead(stage, data) {
 function buildListen(stage, data) {
   const ex = data.example;
   const hasAudio = !!(ex && ex.audio_path);
-  const btn = el("button", {
-    class: "playbtn", disabled: !hasAudio, title: hasAudio ? "再听一遍" : "这条没有语音",
-    text: hasAudio ? "▶" : "×",
+  const node = el("button", {
+    class: "playbtn", disabled: !hasAudio,
+    title: hasAudio ? "再听一遍" : "这条没有语音",
     onClick: () => playAudio(ex && ex.audio_path),
   });
-  stage.appendChild(btn);
+  node.appendChild(icon("play", 30));
+  stage.appendChild(node);
   if (!hasAudio) {
-    stage.appendChild(el("div", { class: "task", text: "这条例句没有生成语音，可以先去训练包里点「补语音」。" }));
+    stage.appendChild(el("div", {
+      class: "task",
+      text: "这条例句没有生成语音，可以先去训练包里点「补语音」。",
+    }));
   }
   if (!state.revealed) {
     stage.appendChild(el("div", { class: "task", text: CHANNEL_TIPS.listen }));
-    stage.appendChild(el("button", { class: "btn", onClick: reveal, text: "想好了，看原文" }));
+    stage.appendChild(btn("想好了，看原文", { class: "btn primary", onClick: reveal }));
   } else {
     stage.appendChild(el("hr"));
     stage.appendChild(el("div", { class: "answer", text: ex ? ex.sentence : "" }));
@@ -546,16 +951,20 @@ function buildListen(stage, data) {
 function buildSpeak(stage, data) {
   const ex = data.example;
   if (!state.revealed) {
+    const img = sceneImage(ex, "");
+    if (img) stage.appendChild(img);
     stage.appendChild(el("div", { class: "prompt-scene", text: sceneText(ex) }));
     stage.appendChild(el("div", { class: "task", text: CHANNEL_TIPS.speak }));
-    stage.appendChild(el("button", { class: "btn", onClick: reveal, text: "说完了，看原文" }));
+    stage.appendChild(btn("说完了，看原文", { class: "btn primary", onClick: reveal }));
   } else {
     stage.appendChild(el("div", { class: "answer", text: ex ? ex.sentence : "" }));
     if (ex && ex.audio_path) {
-      stage.appendChild(el("button", {
-        class: "playbtn small", text: "▶", title: "听一遍对照发音",
+      const p = el("button", {
+        class: "playbtn small", title: "听一遍对照发音",
         onClick: () => playAudio(ex.audio_path),
-      }));
+      });
+      p.appendChild(icon("play", 16));
+      stage.appendChild(p);
     }
     stage.appendChild(sceneBox(data.lesson, ex));
   }
@@ -571,27 +980,30 @@ function buildType(stage, data) {
   const sentence = ex ? ex.sentence : "";
 
   if (!state.revealed) {
+    const img = sceneImage(ex, "");
+    if (img) stage.appendChild(img);
     stage.appendChild(el("div", { class: "prompt-scene", text: sceneText(ex) }));
     const row = el("div", { class: "typerow" });
     const input = el("input", {
       type: "text", value: state.typed, placeholder: "把英文打出来…",
-      autocomplete: "off", autocapitalize: "off", spellcheck: "false",
+      autocomplete: "off", autocapitalize: "off", spellcheck: "false", id: "type-input",
       onInput: (e) => { state.typed = e.target.value; },
       onKeydown: (e) => { if (e.key === "Enter") submitTyped(); },
     });
     row.appendChild(input);
-    row.appendChild(el("button", { class: "btn primary", onClick: submitTyped, text: "提交（Enter）" }));
+    row.appendChild(btn("提交（Enter）", { class: "btn primary", onClick: submitTyped }));
     row.appendChild(el("div", { class: "task", text: CHANNEL_TIPS.type }));
     stage.appendChild(row);
-    setTimeout(() => input.focus(), 30);
   } else {
     stage.appendChild(el("div", { class: "answer", text: sentence }));
     if (state.typedResult) stage.appendChild(renderDiff(state.typedResult));
     if (ex && ex.audio_path) {
-      stage.appendChild(el("button", {
-        class: "playbtn small", text: "▶", title: "听一遍",
+      const p = el("button", {
+        class: "playbtn small", title: "听一遍",
         onClick: () => playAudio(ex.audio_path),
-      }));
+      });
+      p.appendChild(icon("play", 16));
+      stage.appendChild(p);
     }
     stage.appendChild(sceneBox(data.lesson, ex));
   }
@@ -619,18 +1031,21 @@ function buildBuild(stage, data) {
   }));
 
   if (!state.revealed) {
-    stage.appendChild(el("button", { class: "btn", onClick: reveal, text: "造好了，看参考" }));
+    stage.appendChild(btn("造好了，看参考", { class: "btn primary", onClick: reveal }));
     return;
   }
   if (!swaps.length) {
-    stage.appendChild(el("div", { class: "task", text: "这个包没有生成替换参考（模型没给出 swaps）。造句依然可以自己练。" }));
+    stage.appendChild(el("div", {
+      class: "task",
+      text: "这个包没有生成替换参考（模型没给出 swaps）。造句依然可以自己练。",
+    }));
     return;
   }
   stage.appendChild(el("hr"));
   for (const sw of swaps) {
-    const box = el("div", { class: "scenebox", style: "text-align:left;max-width:620px" });
+    const box = el("div", { class: "scenebox", style: "margin-bottom:10px" });
     box.appendChild(el("div", {
-      style: "color:var(--accent);font-size:12.5px;letter-spacing:1px",
+      style: "color:var(--accent);font-size:12px;letter-spacing:1px",
       text: (labels[sw.role] || sw.role) + "：" + (sw.original || ""),
     }));
     if (sw.samples && sw.samples.length) {
@@ -676,25 +1091,10 @@ function renderDiff(result) {
   ]);
 }
 
-function gradeRow(card, preview) {
-  const order = [0, 1, 2, 3];
-  const row = el("div", { class: "grades" });
-  for (const g of order) {
-    const info = preview[g] || preview[String(g)] || {};
-    const btn = el("button", { class: "grade", "data-g": String(g), onClick: () => grade(g) }, [
-      el("b", { text: info.label || ["没想起来", "吃力", "正常", "秒答"][g] }),
-      el("span", { text: info.human || "" }),
-    ]);
-    if (!state.revealed && g !== 0) btn.setAttribute("disabled", "disabled");
-    if (!state.revealed && g !== 0) btn.style.opacity = ".4";
-    row.appendChild(btn);
-  }
-  return row;
-}
-
 function reveal() {
   if (!state.current) return;
   state.revealed = true;
+  state.gradeNote = "";
   const ex = state.current.example;
   // 听力卡翻面即把原文念一遍：把「声音」和「文字」在这里对上，
   // 而不是让用户自己去想刚才听到的是什么。
@@ -708,6 +1108,7 @@ async function fetchCard(cardId) {
     state.revealed = false;
     state.typed = "";
     state.typedResult = null;
+    state.gradeNote = "";
     // 换一张卡就换一种中文说法 —— 但同一张卡内部保持一致。
     const variants = (state.current.example && state.current.example.zh_variants) || [];
     state.variantIndex = variants.length > 1 ? Math.floor(Math.random() * variants.length) : 0;
@@ -718,10 +1119,40 @@ async function fetchCard(cardId) {
     setBanner("warn", "有一张卡取不到，已跳过：" + err.message);
   }
   render();
+  focusTyping();
 }
 
+// 打字卡把光标放进输入框。放在 render 之后而不是 render 里，
+// 是因为 render 会重建 DOM，太早 focus 会 focus 到已经被丢掉的那个节点上。
+function focusTyping() {
+  if (state.view !== "study" || state.revealed) return;
+  const input = $("#type-input");
+  if (input) input.focus();
+}
+
+// 评分。
+//
+// 0（没想起来）任何时候都能按 —— 不需要看到答案才知道自己没想起来。
+// 1/2/3 需要先看到答案，因为「吃力 / 正常 / 秒答」是**核对之后**才能下的判断。
+//
+// 但 0.0.2 之前这里是**直接把三个按钮 disabled 掉**，后果是：
+//   · 按钮仍然显示手形光标，点下去毫无反应，看起来就是坏了；
+//   · 键盘 1/2/3/4 却不受这个限制 —— 鼠标和键盘行为不一致；
+//   · 没有任何文字说明「为什么点不动」。
+// 现在改成：**永远不 disable**。翻面前点 1/2/3 会先把答案翻出来，
+// 并说明「核对一下，再评一次」。任何一次点击都一定有可见的反馈。
 async function grade(g) {
   if (state.busy || !state.current) return;
+
+  if (g !== 0 && !state.revealed) {
+    state.revealed = true;
+    state.gradeNote = "先核对一下答案 —— 确认没问题后再点一次「" + GRADE_LABEL[g] + "」。";
+    const ex = state.current.example;
+    if (state.current.card.channel === "listen" && ex && ex.audio_path) playAudio(ex.audio_path);
+    render();
+    return;
+  }
+
   const started = performance.now();
   state.busy = true;
   try {
@@ -733,8 +1164,10 @@ async function grade(g) {
     state.sessionDone++;
     state.cursor++;
     state.current = null;
+    state.gradeNote = "";
     render();
     if (state.cursor < state.queue.length) fetchCard(state.queue[state.cursor].id);
+    refreshCounts();
   } catch (err) {
     setBanner("bad", err.message + (err.hint ? "　→ " + err.hint : ""));
   } finally {
@@ -748,11 +1181,110 @@ async function loadQueue() {
     state.queue = data.cards || [];
     state.cursor = 0;
     state.current = null;
+    state.stats = data.stats || state.stats;
+    render();
     if (state.queue.length) fetchCard(state.queue[0].id);
-    else render();
   } catch (err) {
     setBanner("bad", "取队列失败：" + err.message);
   }
+}
+
+function refreshCounts() {
+  const due = $("#nav-due");
+  if (state.stats && due) {
+    const n = state.stats.due_now || 0;
+    due.textContent = n ? String(n) : "";
+  }
+}
+
+// ----------------------------------------------------------- 侧边栏交互键
+
+// 侧边栏里那一块「当前能做什么」。
+// 它是响应式的：没有卡的时候不摆一排死按钮，而是告诉用户现在该去哪。
+function renderSideActions() {
+  const host = $("#side-actions");
+  if (!host) return;
+  clear(host);
+
+  if (state.view !== "study") {
+    const panel = el("div", { class: "panel" });
+    panel.appendChild(el("div", { class: "panel-title", text: "操作" }));
+    panel.appendChild(el("div", {
+      class: "faint",
+      text: "这里是「" + VIEW_LABEL[state.view] + "」页。回到「训练」就能开始练卡。",
+    }));
+    panel.appendChild(el("div", { class: "row", style: "margin-top:9px" }, [
+      btn("开始训练", { class: "btn primary sm", onClick: () => setView("study") }, "study"),
+    ]));
+    host.appendChild(panel);
+    return;
+  }
+
+  const panel = el("div", { class: "panel" });
+  panel.appendChild(el("div", { class: "panel-title", text: "当前卡片" }));
+
+  const data = state.current;
+  if (!data || state.cursor >= state.queue.length) {
+    panel.appendChild(el("div", { class: "faint", text: "没有正在练的卡。" }));
+    panel.appendChild(el("div", { class: "row", style: "margin-top:9px" }, [
+      btn("刷新队列", { class: "btn sm", onClick: loadQueue }, "refresh"),
+    ]));
+    host.appendChild(panel);
+    return;
+  }
+
+  const preview = data.srs_preview || {};
+  const grades = el("div", { class: "grades" });
+  for (const g of [0, 1, 2, 3]) {
+    const info = preview[g] || preview[String(g)] || {};
+    const pending = !state.revealed && g !== 0;
+    grades.appendChild(el("button", {
+      class: "grade", "data-g": String(g),
+      "data-pending": pending ? "1" : "0",
+      title: pending
+        ? "点一下会把答案翻出来，核对后再评这一档"
+        : (info.human ? "下次复习：" + info.human : ""),
+      onClick: () => grade(g),
+    }, [
+      el("span", { class: "num", text: String(g + 1) }),
+      el("span", { class: "txt" }, [
+        el("b", { text: info.label || GRADE_LABEL[g] }),
+        el("span", { text: pending ? "先核对答案" : ("→ " + (info.human || "—")) }),
+      ]),
+    ]));
+  }
+  panel.appendChild(grades);
+
+  panel.appendChild(el("div", {
+    class: "faint", style: "margin-top:9px",
+    text: state.revealed
+      ? "凭刚才回想起来的难易程度评。键盘 1–4 也行。"
+      : "「没想起来」现在就能直接评。其余三档会先让你核对答案。",
+  }));
+
+  if (state.gradeNote) {
+    panel.appendChild(el("div", { class: "hint", style: "margin-top:8px", text: state.gradeNote }));
+  }
+
+  if (!state.revealed) {
+    panel.appendChild(el("div", { class: "row", style: "margin-top:9px" }, [
+      btn("翻面看答案", { class: "btn primary sm", onClick: reveal }, "book"),
+    ]));
+  }
+
+  host.appendChild(panel);
+
+  host.appendChild(el("div", { class: "panel" }, [
+    el("div", { class: "panel-title", text: "快捷键" }),
+    el("div", { class: "hotkeys" }, [
+      el("div", null, [el("span", { class: "kbd", text: "空格" }), " 翻面"]),
+      el("div", null, [el("span", { class: "kbd", text: "1" }), " 没想起来"]),
+      el("div", null, [el("span", { class: "kbd", text: "2" }), " 吃力"]),
+      el("div", null, [el("span", { class: "kbd", text: "3" }), " 正常"]),
+      el("div", null, [el("span", { class: "kbd", text: "4" }), " 秒答"]),
+      el("div", null, [el("span", { class: "kbd", text: "Enter" }), " 提交 / 翻面"]),
+    ]),
+  ]));
 }
 
 // ------------------------------------------------------------- 训练包视图
@@ -766,21 +1298,25 @@ function renderLessons(main) {
 
   const form = el("div", { class: "card" });
   const input = el("input", {
-    type: "text", id: "target-input", placeholder: "例如：appreciate　/　in the long run　/　I'd rather stay home tonight.",
+    type: "text", id: "target-input",
+    placeholder: "例如：appreciate　/　in the long run　/　I'd rather stay home tonight.",
     onKeydown: (e) => { if (e.key === "Enter") createLesson(); },
   });
-  form.appendChild(el("label", { class: "field" }, [el("span", { text: "要练的东西" }), input]));
+  form.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: "要练的东西" }), input,
+  ]));
   const row = el("div", { class: "row" });
-  const btn = el("button", { class: "btn primary", id: "create-btn", onClick: createLesson, text: "生成训练包" });
-  row.appendChild(btn);
-  row.appendChild(el("span", { class: "faint", text: "生成要几十秒（调模型 + 合成语音），可以同时丢好几个进去。" }));
+  row.appendChild(btn("生成训练包", { class: "btn primary", id: "create-btn", onClick: createLesson }, "plus"));
+  row.appendChild(el("span", {
+    class: "faint",
+    text: "生成要几十秒（调模型 + 合成语音 + 配场景图），可以同时丢好几个进去。",
+  }));
   form.appendChild(row);
-  const msg = el("div", { id: "create-msg" });
-  form.appendChild(msg);
+  form.appendChild(el("div", { id: "create-msg" }));
   main.appendChild(form);
 
   const listCard = el("div", { class: "card", id: "lesson-list" });
-  listCard.appendChild(el("div", { class: "spin" }));
+  listCard.appendChild(spin("正在读取…"));
   main.appendChild(listCard);
   loadLessons();
 }
@@ -795,13 +1331,13 @@ async function createLesson() {
     msg.appendChild(el("div", { class: "err", text: "先输入要练的内容。" }));
     return;
   }
-  const btn = $("#create-btn");
-  if (btn) btn.disabled = true;
+  const node = $("#create-btn");
+  if (node) node.disabled = true;
   try {
     const data = await api("/api/lessons", { method: "POST", body: JSON.stringify({ target: target }) });
     input.value = "";
     msg.appendChild(el("div", {
-      class: "hint",
+      class: "hint ok",
       text: data.reused ? "这个目标已经在生成中了，直接复用它。" : "已经开工，往下看进度。",
     }));
     loadLessons();
@@ -809,7 +1345,7 @@ async function createLesson() {
   } catch (err) {
     msg.appendChild(errorBlock(err));
   } finally {
-    if (btn) btn.disabled = false;
+    if (node) node.disabled = false;
   }
 }
 
@@ -828,8 +1364,9 @@ async function tickPoll(lessonId) {
   pollTimers.delete(lessonId);
   try {
     const job = await api("/api/lessons/" + lessonId + "/job");
-    loadLessons();
+    if (state.view === "lessons") loadLessons();
     if (job.status !== "ready" && job.status !== "failed") pollLesson(lessonId);
+    else refreshCounts();
   } catch (err) {
     // 轮询失败不该把界面弄乱，安静地停掉就好 ——
     // 用户手动刷新或重开程序时会重新拿到真实状态。
@@ -841,39 +1378,41 @@ async function loadLessons() {
   if (!host) return;
   try {
     const data = await api("/api/lessons");
+    state.stats = data.stats || state.stats;
+    refreshCounts();
     clear(host);
     const lessons = data.lessons || [];
+    const navCount = $("#nav-lessons");
+    if (navCount) navCount.textContent = lessons.length ? String(lessons.length) : "";
     if (!lessons.length) {
       host.appendChild(el("div", { class: "empty" }, [
+        el("div", { class: "art" }, [icon("lessons", 40)]),
         el("b", { text: "还没有训练包" }),
-        el("div", { text: "在上面输入一个词或一句话，生成第一个。" }),
+        el("div", { class: "faint", text: "在上面输入一个词或一句话，生成第一个。" }),
       ]));
       return;
     }
-    for (const lesson of lessons) host.appendChild(lessonRow(lesson, data.stats));
+    for (const lesson of lessons) host.appendChild(lessonRow(lesson));
   } catch (err) {
     clear(host);
     host.appendChild(errorBlock(err));
   }
 }
 
-function lessonRow(lesson, stats) {
+function lessonRow(lesson) {
   const box = el("div", { class: "lesson" });
   const left = el("div", { class: "grow" });
 
-  const title = el("div", { class: "t", text: lesson.target });
-  left.appendChild(title);
-
-  const meta = el("div", { class: "meta" });
-  meta.appendChild(document.createTextNode(humanTime(lesson.created_at) + "　"));
-  meta.appendChild(document.createTextNode("· " + (lesson.language || "en")));
-  left.appendChild(meta);
+  left.appendChild(el("div", { class: "t", text: lesson.target }));
+  left.appendChild(el("div", { class: "meta",
+    text: humanTime(lesson.created_at) + "　·　" + (lesson.language || "en") }));
 
   const chips = el("div", { class: "chips" });
   if (lesson.status === "generating") {
     const job = lesson.job;
-    const step = job && job.step ? job.step : "正在生成";
-    chips.appendChild(el("span", { class: "chip warn" }, [el("i", { class: "spin" }), " " + step]));
+    chips.appendChild(el("span", { class: "chip warn" }, [
+      el("i", { class: "spin" }), " " + ((job && job.step) || "正在生成"),
+    ]));
   } else if (lesson.status === "failed") {
     chips.appendChild(el("span", { class: "chip bad", text: "生成失败" }));
   } else {
@@ -889,23 +1428,22 @@ function lessonRow(lesson, stats) {
   }
   box.appendChild(left);
 
-  const actions = el("div", { class: "col", style: "align-items:flex-end" });
+  const acts = el("div", { class: "acts" });
   if (lesson.status === "ready") {
-    actions.appendChild(el("button", { class: "btn", onClick: () => openLesson(lesson.id), text: "打开" }));
-  } else   if (lesson.status === "failed") {
-    actions.appendChild(el("button", { class: "btn", onClick: () => retryLesson(lesson.id, lesson.target), text: "重试" }));
+    acts.appendChild(btn("打开", { class: "btn sm", onClick: () => openLesson(lesson.id) }, "book"));
+  } else if (lesson.status === "failed") {
+    acts.appendChild(btn("重试", { class: "btn sm", onClick: () => retryLesson(lesson.id, lesson.target) }, "refresh"));
   }
-  actions.appendChild(el("button", {
-    class: "btn ghost danger",
+  acts.appendChild(btn("删除", {
+    class: "btn sm ghost danger",
     onClick: () => removeLesson(lesson.id, lesson.target),
-    text: "删除",
-  }));
-  box.appendChild(actions);
+  }, "trash"));
+  box.appendChild(acts);
   return box;
 }
 
 async function removeLesson(id, target) {
-  if (!confirm("删除「" + target + "」？例句、语音和复习记录都会一并删掉，不可恢复。")) return;
+  if (!confirm("删除「" + target + "」？例句、语音、场景图和复习记录都会一并删掉，不可恢复。")) return;
   try {
     await api("/api/lessons/" + id, { method: "DELETE" });
     loadLessons();
@@ -915,7 +1453,7 @@ async function removeLesson(id, target) {
 }
 
 async function retryLesson(id, target) {
-  if (!confirm("重新生成「" + target + "」？\n\n会重新调模型、重新合成语音，覆盖现有的例句和复习进度。")) return;
+  if (!confirm("重新生成「" + target + "」？\n\n会重新调模型、重新合成语音和配图，覆盖现有的例句和复习进度。")) return;
   try {
     await api("/api/lessons/" + id + "/regenerate", { method: "POST" });
     loadLessons();
@@ -926,15 +1464,20 @@ async function retryLesson(id, target) {
 }
 
 async function openLesson(id) {
-  setView("lessons");
+  state.view = "lessons";
+  if (location.hash.slice(1) !== "lessons") location.hash = "lessons";
+  for (const b of document.querySelectorAll("#nav button")) {
+    b.setAttribute("aria-current", String(b.dataset.view === "lessons"));
+  }
   const main = $("#app");
   clear(main);
   main.appendChild(el("div", { class: "row" }, [
-    el("button", { class: "btn", onClick: () => setView("lessons"), text: "← 返回" }),
+    btn("返回列表", { class: "btn ghost sm", onClick: () => setView("lessons") }, "left"),
   ]));
   const host = el("div", { id: "lesson-detail" });
   main.appendChild(host);
   host.appendChild(el("div", { class: "stage" }, [el("div", { class: "spin" })]));
+  renderSideActions();
   try {
     const lesson = await api("/api/lessons/" + id);
     clear(host);
@@ -948,18 +1491,25 @@ async function openLesson(id) {
 function renderLessonDetail(host, lesson) {
   host.appendChild(el("h1", { text: lesson.target }));
   const r = lesson.readiness || {};
-  host.appendChild(el("p", {
-    class: "lead",
-    text: (r.example_count || 0) + " 条例句 · " + (r.audio_ready || 0) + " 条有语音"
-      + (lesson.gloss ? "" : " · 缺英英释义"),
-  }));
+  const bits = [
+    (r.example_count || 0) + " 条例句",
+    (r.audio_ready || 0) + " 条有语音",
+    (r.image_ready || 0) + " 条有场景图",
+  ];
+  if (!lesson.gloss) bits.push("缺英英释义");
+  host.appendChild(el("p", { class: "lead", text: bits.join(" · ") }));
 
   if (r.problems && r.problems.length) {
     const box = el("div", { class: "card tight" });
     box.appendChild(el("div", { class: "faint", text: "素材还不齐：" + r.problems.join("；") }));
-    box.appendChild(el("div", { class: "row", style: "margin-top:10px" }, [
-      el("button", { class: "btn", onClick: () => redoAudio(lesson.id), text: "补语音" }),
-    ]));
+    const row = el("div", { class: "row", style: "margin-top:10px" });
+    row.appendChild(btn("补语音", { class: "btn sm", onClick: () => redoAudio(lesson.id) }, "play"));
+    // 「配图来源」设成「不配图」时不摆这个按钮 —— 否则它按下去也只会
+    // 重新报一次「没有配图来源」。能按但没用，比没有更糟。
+    if (r.images_expected !== false) {
+      row.appendChild(btn("补场景图", { class: "btn sm", onClick: () => redoImages(lesson.id) }, "image"));
+    }
+    box.appendChild(row);
     host.appendChild(box);
   }
 
@@ -967,28 +1517,44 @@ function renderLessonDetail(host, lesson) {
     host.appendChild(el("div", { class: "card" }, [
       el("div", { class: "faint", text: "英英释义（不用中文，避免形成英文↔中文的对应）" }),
       el("div", { style: "margin-top:6px;font-size:16px", text: lesson.gloss }),
-      lesson.ipa ? el("div", { class: "faint mono", style: "margin-top:6px", text: "/" + lesson.ipa.replace(/^\/|\/$/g, "") + "/" }) : null,
+      lesson.ipa
+        ? el("div", { class: "faint mono", style: "margin-top:6px", text: "/" + lesson.ipa.replace(/^\/|\/$/g, "") + "/" })
+        : null,
       lesson.note ? el("div", { class: "hint", text: lesson.note }) : null,
     ]));
   }
 
   host.appendChild(el("h2", { text: "例句与练法" }));
-  (lesson.examples || []).forEach((ex, i) => {
+  (lesson.examples || []).forEach((ex) => {
     const box = el("div", { class: "example" });
-    const head = el("div", { class: "row" }, [
-      el("div", { class: "en grow", text: ex.sentence }),
-    ]);
+    const head = el("div", { class: "row", style: "align-items:flex-start" });
+    const left = el("div", { class: "grow" });
+    left.appendChild(el("div", { class: "en", text: ex.sentence }));
+    if (ex.scene_zh) left.appendChild(el("div", { class: "zh", text: ex.scene_zh }));
+    if (ex.scene_en) left.appendChild(el("div", { class: "zh", style: "opacity:.72", text: ex.scene_en }));
+    head.appendChild(left);
+
+    if (ex.scene_image) {
+      const thumb = el("img", {
+        class: "thumb", src: imagePath(ex.scene_image), alt: "场景配图",
+        loading: "lazy", referrerpolicy: "no-referrer", title: "点击放大",
+        onClick: () => zoomImage(ex.scene_image),
+      });
+      thumb.addEventListener("error", () => { thumb.style.display = "none"; });
+      head.appendChild(thumb);
+    }
     if (ex.audio_path) {
-      head.appendChild(el("button", {
-        class: "playbtn small", text: "▶", title: "播放",
+      const p = el("button", {
+        class: "playbtn small", title: "播放",
         onClick: () => playAudio(ex.audio_path),
-      }));
+      });
+      p.appendChild(icon("play", 16));
+      head.appendChild(p);
     } else {
       head.appendChild(el("span", { class: "chip warn", text: "缺语音" }));
     }
     box.appendChild(head);
-    if (ex.scene_zh) box.appendChild(el("div", { class: "zh", text: ex.scene_zh }));
-    if (ex.scene_en) box.appendChild(el("div", { class: "zh", style: "opacity:.72", text: ex.scene_en }));
+
     const variants = ex.zh_variants || [];
     if (variants.length > 1) {
       box.appendChild(el("div", {
@@ -1023,10 +1589,38 @@ function renderLessonDetail(host, lesson) {
   }
 }
 
+// 点缩略图放大。用窗口本身当遮罩，不引第三方弹层。
+function zoomImage(name) {
+  const overlay = el("div", {
+    style: "position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.78);" +
+           "display:flex;align-items:center;justify-content:center;padding:32px;cursor:zoom-out",
+    onClick: () => overlay.remove(),
+  }, [
+    el("img", {
+      src: imagePath(name),
+      style: "max-width:100%;max-height:100%;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.6)",
+    }),
+  ]);
+  document.body.appendChild(overlay);
+}
+
 async function redoAudio(id) {
   try {
     const result = await api("/api/lessons/" + id + "/audio", { method: "POST" });
-    alert("补了 " + result.ok + " 条语音。" + (result.failed && result.failed.length ? "\n失败 " + result.failed.length + " 条，详见日志。" : ""));
+    alert("补了 " + result.ok + " 条语音。" +
+      (result.failed && result.failed.length ? "\n失败 " + result.failed.length + " 条，详见日志。" : ""));
+    openLesson(id);
+  } catch (err) {
+    alert(err.message + (err.hint ? "\n" + err.hint : ""));
+  }
+}
+
+async function redoImages(id) {
+  try {
+    const result = await api("/api/lessons/" + id + "/images", { method: "POST" });
+    if (result.skipped) { alert(result.skipped); return; }
+    alert("补了 " + result.ok + " 张场景图。" +
+      (result.failed && result.failed.length ? "\n失败 " + result.failed.length + " 张，详见日志。" : ""));
     openLesson(id);
   } catch (err) {
     alert(err.message + (err.hint ? "\n" + err.hint : ""));
@@ -1058,20 +1652,525 @@ async function practiceOne(lessonId, exampleId, channel) {
   }
 }
 
+// --------------------------------------------------------------- 目标视图
+
+function catalogList(key) {
+  return ((state.catalog || {})[key]) || [];
+}
+
+// 目标表单的本地草稿。做成模块级而不是每次 render 现读 DOM ——
+// render 会把输入框整个重建，草稿不存下来的话，用户选了领域之后
+// 就发现上面填的字没了。
+const draft = {
+  language: "en",
+  goalKind: "fluency",
+  exam: "cet6",
+  detail: "",
+  domains: ["日常", "社交"],
+  count: 20,
+  customCount: false,
+};
+
+function renderPlans(main) {
+  main.appendChild(el("h1", { text: "学习目标" }));
+  main.appendChild(el("p", {
+    class: "lead",
+    text: "说出你学这门语言要干什么，程序排一份大纲，再一条一条生成成训练包。"
+        + "目标不是难度标签 ——「过六级」和「真的会用」是两件事，这里分开处理。",
+  }));
+
+  if (state.openPlan) { renderPlanDetail(main, state.openPlan); return; }
+
+  main.appendChild(planForm());
+
+  const listCard = el("div", { class: "card", id: "plan-list" });
+  listCard.appendChild(spin("正在读取…"));
+  main.appendChild(listCard);
+  loadPlans();
+}
+
+function planForm() {
+  const card = el("div", { class: "card" });
+  card.appendChild(el("h2", { style: "margin-top:0", text: "新建一份学习计划" }));
+
+  const languages = catalogList("languages");
+  const langSel = el("select", {
+    id: "plan-language",
+    onChange: (e) => { draft.language = e.target.value; render(); },
+  });
+  for (const lang of languages) {
+    const opt = el("option", {
+      value: lang.id,
+      text: lang.label + "（" + lang.native + "）" + (lang.supported ? "" : " · 还没开放"),
+      disabled: !lang.supported,
+    });
+    if (lang.id === draft.language) opt.selected = true;
+    langSel.appendChild(opt);
+  }
+  card.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: "语言" }), langSel,
+  ]));
+  const profile = languages.find((l) => l.id === draft.language);
+  if (profile && !profile.supported) {
+    card.appendChild(el("div", { class: "hint", text: profile.note }));
+  }
+
+  const kinds = catalogList("goal_kinds");
+  const seg = el("div", { class: "seg" });
+  for (const kind of kinds) {
+    seg.appendChild(el("button", {
+      "aria-pressed": String(kind.id === draft.goalKind),
+      onClick: () => { draft.goalKind = kind.id; render(); },
+      text: kind.label,
+    }));
+  }
+  card.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: "你想拿这门语言做什么" }), seg,
+  ]));
+  const kindInfo = kinds.find((k) => k.id === draft.goalKind);
+  if (kindInfo) card.appendChild(el("div", { class: "hint", text: kindInfo.what }));
+
+  if (draft.goalKind === "exam") {
+    const exams = catalogList("exam_presets");
+    const examSel = el("select", {
+      id: "plan-exam",
+      onChange: (e) => { draft.exam = e.target.value; render(); },
+    });
+    for (const item of exams) {
+      const opt = el("option", { value: item.id, text: item.label + "（参考 " + item.band + "）" });
+      if (item.id === draft.exam) opt.selected = true;
+      examSel.appendChild(opt);
+    }
+    card.appendChild(el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "哪一场考试" }), examSel,
+    ]));
+    const picked = exams.find((e) => e.id === draft.exam);
+    if (picked) {
+      card.appendChild(el("div", {
+        class: "hint",
+        text: picked.detail + "　考试的等级只用来收窄范围，大纲仍然是按「句子和情境」排的，不会变成一张词表。",
+      }));
+    }
+  }
+
+  const detailLabel = draft.goalKind === "exam"
+    ? "补充说明（可选）：你的弱项、时间安排、特别想攻的场景"
+    : "具体一点：你打算用它做什么？";
+  const detailHint = draft.goalKind === "exam"
+    ? "例如：听力总是跟不上，想重点练反应速度"
+    : "例如：明年去澳洲打工度假，要能跟房东和同事日常对话";
+  const ta = el("textarea", {
+    id: "plan-detail", placeholder: detailHint,
+    onInput: (e) => { draft.detail = e.target.value; },
+  });
+  ta.value = draft.detail;
+  card.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: detailLabel }), ta,
+  ]));
+
+  const domains = catalogList("domain_presets");
+  const chips = el("div", { class: "chips" });
+  for (const d of domains) {
+    chips.appendChild(el("button", {
+      class: "toggle", "aria-pressed": String(draft.domains.indexOf(d.id) >= 0),
+      onClick: () => toggleDomain(d.id),
+      text: d.label,
+    }));
+  }
+  card.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: "要覆盖哪些场景（可多选，不选就按日常优先自己排）" }), chips,
+  ]));
+
+  const countSeg = el("div", { class: "seg" });
+  for (const n of [1, 10, 20, 50]) {
+    countSeg.appendChild(el("button", {
+      "aria-pressed": String(!draft.customCount && draft.count === n),
+      onClick: () => { draft.customCount = false; draft.count = n; render(); },
+      text: n + " 个",
+    }));
+  }
+  countSeg.appendChild(el("button", {
+    "aria-pressed": String(draft.customCount),
+    onClick: () => { draft.customCount = true; render(); },
+    text: "自定义",
+  }));
+  card.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: "先储备多少个" }), countSeg,
+  ]));
+
+  if (draft.customCount) {
+    card.appendChild(el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "自定义数量（1–200）" }),
+      el("input", {
+        type: "number", id: "plan-count", min: "1", max: "200", value: draft.count,
+        onInput: (e) => {
+          draft.count = Math.max(1, Math.min(200, Number(e.target.value) || 1));
+        },
+      }),
+    ]));
+  }
+
+  card.appendChild(el("div", {
+    class: "faint",
+    text: "每个包 8 条例句 + 语音 + 场景图，所以 " + draft.count + " 个包大约要 "
+        + Math.max(1, Math.round(draft.count * 0.6)) + "–"
+        + Math.max(2, Math.round(draft.count * 1.5)) + " 分钟，并且会一直占着网络。",
+  }));
+
+  card.appendChild(el("div", { class: "row", style: "margin-top:12px" }, [
+    btn("生成大纲", { class: "btn primary", id: "plan-create", onClick: createPlan }, "wand"),
+    el("span", { class: "faint", text: "先生成大纲给你过目，确认了才开工。" }),
+  ]));
+  card.appendChild(el("div", { id: "plan-msg" }));
+  return card;
+}
+
+function toggleDomain(id) {
+  const i = draft.domains.indexOf(id);
+  if (i >= 0) draft.domains.splice(i, 1);
+  else draft.domains.push(id);
+  render();
+}
+
+async function createPlan() {
+  const msg = $("#plan-msg");
+  if (!msg) return;
+  clear(msg);
+  const node = $("#plan-create");
+  if (node) node.disabled = true;
+  msg.appendChild(spin("正在让模型排大纲…"));
+
+  const exams = catalogList("exam_presets");
+  const exam = exams.find((e) => e.id === draft.exam);
+  const payload = {
+    language: draft.language,
+    goal_kind: draft.goalKind,
+    goal_label: draft.goalKind === "exam" ? (exam ? exam.label : "") : "",
+    goal_detail: draft.goalKind === "exam"
+      ? ((exam ? exam.band + " · " + exam.detail : "") + (draft.detail ? "　学习者补充：" + draft.detail : ""))
+      : draft.detail,
+    domains: draft.domains,
+    target_count: draft.count,
+  };
+  if (draft.goalKind === "custom") payload.goal_label = draft.detail;
+
+  try {
+    const data = await api("/api/plans", { method: "POST", body: JSON.stringify(payload) });
+    state.openPlan = data.plan;
+    setBanner("ok", data.note ? "大纲排好了：" + data.note : "大纲排好了，往下过一遍，不要的条目点掉。");
+    render();
+  } catch (err) {
+    clear(msg);
+    msg.appendChild(errorBlock(err));
+  } finally {
+    if (node) node.disabled = false;
+  }
+}
+
+async function loadPlans() {
+  const host = $("#plan-list");
+  if (!host) return;
+  try {
+    const data = await api("/api/plans");
+    state.plans = data.plans || [];
+    const navCount = $("#nav-plans");
+    if (navCount) navCount.textContent = state.plans.length ? String(state.plans.length) : "";
+    if (state.openPlan) return;
+    clear(host);
+    if (!state.plans.length) {
+      host.appendChild(el("div", { class: "empty" }, [
+        el("div", { class: "art" }, [icon("plans", 40)]),
+        el("b", { text: "还没有学习计划" }),
+        el("div", { class: "faint", text: "上面填一次目标，就能批量储备一批素材，慢慢练。" }),
+      ]));
+      return;
+    }
+    for (const plan of state.plans) host.appendChild(planRow(plan));
+  } catch (err) {
+    clear(host);
+    host.appendChild(errorBlock(err));
+  }
+}
+
+function goalText(plan) {
+  if (plan.goal_kind === "exam") return "准备 " + (plan.goal_label || "考试");
+  if (plan.goal_kind === "custom") return plan.goal_label || plan.goal_detail || "自定义目标";
+  return "真正学会这门语言";
+}
+
+function planRow(plan) {
+  const box = el("div", { class: "plan" });
+  const head = el("div", { class: "head" });
+  const left = el("div", { class: "grow" });
+  left.appendChild(el("div", { class: "title", text: goalText(plan) }));
+  let subText = (plan.language || "en") + " · 目标 " + plan.target_count + " 个 · " + humanTime(plan.created_at);
+  if (plan.domains && plan.domains.length) subText += " · " + plan.domains.join(" / ");
+  left.appendChild(el("div", { class: "sub", text: subText }));
+  head.appendChild(left);
+
+  const acts = el("div", { class: "row" });
+  acts.appendChild(btn("打开", { class: "btn sm", onClick: () => openPlan(plan.id) }, "book"));
+  acts.appendChild(btn("删除", {
+    class: "btn sm ghost danger",
+    onClick: () => removePlan(plan.id, goalText(plan)),
+  }, "trash"));
+  head.appendChild(acts);
+  box.appendChild(head);
+
+  const p = plan.progress || {};
+  const total = p.total || 0;
+  const ready = p.ready || 0;
+  const chips = el("div", { class: "chips", style: "margin-top:10px" });
+  if (plan.status === "draft") chips.appendChild(el("span", { class: "chip accent", text: "大纲待确认" }));
+  else if (plan.status === "generating") chips.appendChild(el("span", { class: "chip warn" }, [el("i", { class: "spin" }), " 正在生成"]));
+  else if (plan.status === "failed") chips.appendChild(el("span", { class: "chip bad", text: "失败" }));
+  else chips.appendChild(el("span", { class: "chip ok", text: "已完成" }));
+  chips.appendChild(el("span", { class: "chip", text: ready + " / " + (total || plan.target_count) + " 个可用" }));
+  if (p.failed) chips.appendChild(el("span", { class: "chip bad", text: p.failed + " 个失败" }));
+  box.appendChild(chips);
+
+  if (total) {
+    box.appendChild(el("div", { class: "bar", style: "margin-top:9px" }, [
+      el("i", { style: "width:" + Math.round((ready / Math.max(total, 1)) * 100) + "%" }),
+    ]));
+  }
+  if (plan.status === "failed" && plan.error) {
+    box.appendChild(el("div", { class: "err", style: "margin-top:10px", text: plan.error }));
+  }
+  return box;
+}
+
+async function openPlan(id) {
+  try {
+    state.openPlan = await api("/api/plans/" + id);
+    render();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function renderPlanDetail(main, plan) {
+  main.appendChild(el("div", { class: "row", style: "margin-bottom:12px" }, [
+    btn("返回计划列表", { class: "btn ghost sm", onClick: () => { state.openPlan = null; render(); } }, "left"),
+  ]));
+
+  const card = el("div", { class: "card" });
+  card.appendChild(el("h2", { style: "margin-top:0", text: goalText(plan) }));
+  const p = plan.progress || {};
+  card.appendChild(el("p", { class: "lead", text:
+    (plan.language || "en") + " · 目标储备 " + plan.target_count + " 个 · 已建 "
+    + (p.total || 0) + " 个（可用 " + (p.ready || 0) + "）" }));
+  if (plan.goal_detail) card.appendChild(el("div", { class: "hint", text: plan.goal_detail }));
+  if (plan.domains && plan.domains.length) {
+    const chips = el("div", { class: "chips", style: "margin-top:10px" });
+    for (const d of plan.domains) chips.appendChild(el("span", { class: "chip", text: d }));
+    card.appendChild(chips);
+  }
+  main.appendChild(card);
+
+  const outline = plan.outline || [];
+  main.appendChild(el("h2", { text: "大纲（" + outline.length + " 条）" }));
+  if (!outline.length) {
+    main.appendChild(el("div", { class: "card tight" }, [
+      el("div", { class: "faint", text: "还没有大纲。点下面的「重新排大纲」。备" }),
+    ]));
+  }
+
+  const picked = new Set(outline.map((o) => o.target));
+  const holder = el("div", { id: "outline-holder" });
+  const countLine = el("div", { class: "faint" });
+
+  const renderItems = () => {
+    clear(holder);
+    for (const item of outline) {
+      const on = picked.has(item.target);
+      const row = el("div", { class: "outline-item" + (on ? "" : " off") });
+      row.appendChild(el("button", {
+        class: "pick", "aria-pressed": String(on),
+        title: on ? "点一下排除这条" : "点一下加回来",
+        onClick: () => {
+          if (picked.has(item.target)) picked.delete(item.target);
+          else picked.add(item.target);
+          renderItems();
+          syncCount();
+        },
+      }, [icon("check", 12)]));
+      const body = el("div", { class: "body" });
+      body.appendChild(el("div", { class: "target", text: item.target }));
+      if (item.why) body.appendChild(el("div", { class: "why", text: item.why }));
+      const tags = el("div", { class: "tags" });
+      if (item.kind) tags.appendChild(el("span", { class: "chip", text: item.kind }));
+      if (item.domain) tags.appendChild(el("span", { class: "chip accent", text: item.domain }));
+      if (item.band) tags.appendChild(el("span", { class: "chip", text: item.band }));
+      body.appendChild(tags);
+      row.appendChild(body);
+      holder.appendChild(row);
+    }
+  };
+  const syncCount = () => {
+    countLine.textContent = "将生成 " + picked.size + " 个训练包。"
+      + (picked.size === outline.length ? "" : "（排除了 " + (outline.length - picked.size) + " 条）");
+  };
+  renderItems();
+  syncCount();
+  main.appendChild(holder);
+  main.appendChild(el("div", { style: "margin-top:10px" }, [countLine]));
+
+  const actions = el("div", { class: "row", style: "margin-top:14px" });
+  if (plan.status === "generating") {
+    actions.appendChild(el("div", { class: "hint", style: "margin:0" }, [
+      el("i", { class: "spin" }), " 正在生成…进度在下面。这一步会跑几分钟，可以先切到「训练」去练已有的卡。",
+    ]));
+  } else {
+    actions.appendChild(btn("开始生成这 " + picked.size + " 个", {
+      class: "btn primary", id: "plan-start",
+      onClick: () => startPlan(plan.id, Array.from(picked)),
+    }, "spark"));
+  }
+  main.appendChild(actions);
+  main.appendChild(el("div", { id: "plan-detail-msg" }));
+
+  const jobHost = el("div", { id: "plan-job", style: "margin-top:12px" });
+  main.appendChild(jobHost);
+  if (plan.status === "generating") {
+    refreshPlanJob(plan.id);
+    pollPlan(plan.id);
+  } else if (plan.status === "failed" && plan.error) {
+    jobHost.appendChild(el("div", { class: "err", text: plan.error }));
+  }
+
+  const lessons = plan.lessons || [];
+  if (!lessons.length) return;
+
+  // 已经生成出来的训练包。顺序按大纲来 —— 倒着显示会把「最后才该学的」
+  // 摆到最上面，而用户正是照着这个顺序在往前推的。
+  // 直接复用 lessonRow：多写一套只会让两处的行为慢慢长歪。
+  main.appendChild(el("h2", { text: "已生成的训练包（" + lessons.length + "）" }));
+  for (const lesson of lessons) main.appendChild(lessonRow(lesson));
+}
+
+async function refreshPlanJob(planId) {
+  const host = $("#plan-job");
+  if (!host) return;
+  try {
+    const data = await api("/api/plans/" + planId + "/job");
+    clear(host);
+    const job = data.job || {};
+    const p = data.progress || {};
+    const total = p.total || 0;
+    const done = (p.ready || 0) + (p.failed || 0);
+    host.appendChild(el("div", { class: "card tight" }, [
+      el("div", { class: "row" }, [
+        el("i", { class: "spin" }),
+        el("div", { class: "grow", text: job.step || "正在生成…" }),
+      ]),
+      el("div", { class: "bar", style: "margin-top:10px" }, [
+        el("i", { style: "width:" + Math.round((done / Math.max(total, 1)) * 100) + "%" }),
+      ]),
+      el("div", { class: "faint", style: "margin-top:7px",
+        text: "已建 " + total + " 个包 · 完成 " + done
+            + (p.failed ? " · 失败 " + p.failed : "") }),
+    ]));
+  } catch (err) { /* 轮询失败就安静停掉 */ }
+}
+
+const planTimers = new Map();
+
+function pollPlan(planId) {
+  const existing = planTimers.get(planId);
+  if (existing) clearTimeout(existing);
+  planTimers.set(planId, setTimeout(() => tickPlan(planId), 2500));
+}
+
+async function tickPlan(planId) {
+  planTimers.delete(planId);
+  try {
+    const data = await api("/api/plans/" + planId + "/job");
+    if (state.view === "plans" && state.openPlan && state.openPlan.id === planId) {
+      refreshPlanJob(planId);
+    }
+    if (data.status === "generating") {
+      pollPlan(planId);
+      return;
+    }
+    if (state.view === "plans" && state.openPlan && state.openPlan.id === planId) {
+      state.openPlan = await api("/api/plans/" + planId);
+      render();
+    } else if (state.view === "plans") {
+      loadPlans();
+    }
+    refreshCounts();
+  } catch (err) { /* 同上 */ }
+}
+
+async function startPlan(planId, targets) {
+  const msg = $("#plan-detail-msg");
+  if (msg) clear(msg);
+  try {
+    if (targets && targets.length) {
+      const plan = state.openPlan || {};
+      const kept = (plan.outline || []).filter((o) => targets.indexOf(o.target) >= 0);
+      await api("/api/plans/" + planId + "/outline", {
+        method: "PUT", body: JSON.stringify({ outline: kept }),
+      });
+    }
+    await api("/api/plans/" + planId + "/start", { method: "POST" });
+    setBanner("ok", "开始生成。可以切到「训练」练已有的卡，这个在后台跑。");
+    state.openPlan = await api("/api/plans/" + planId);
+    render();
+    pollPlan(planId);
+  } catch (err) {
+    if (msg) msg.appendChild(errorBlock(err));
+  }
+}
+
+async function removePlan(id, label) {
+  if (!confirm("删除计划「" + label + "」？\n\n它下面已生成的训练包和复习记录会一起删掉。")) return;
+  try {
+    await api("/api/plans/" + id, { method: "DELETE" });
+    if (state.openPlan && state.openPlan.id === id) state.openPlan = null;
+    render();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
 // --------------------------------------------------------------- 设置视图
 
 function renderSettings(main) {
   main.appendChild(el("h1", { text: "设置" }));
-  main.appendChild(el("p", { class: "lead", text: "密钥只存在你自己电脑上的 config.json 里，不会上传、也不会进 git。" }));
+  main.appendChild(el("p", {
+    class: "lead",
+    text: "密钥只存在你自己电脑上的 config.json 里，不会上传、也不会进 git。",
+  }));
 
   const cfg = state.config || {};
-  const llm = cfg.llm || {};
-  const tts = cfg.tts || {};
-  const presets = (state.catalog && state.catalog.llm_presets) || {};
+  main.appendChild(cardLLM(cfg));
+  main.appendChild(cardTTS(cfg));
+  main.appendChild(cardImages(cfg));
+  main.appendChild(cardStudy(cfg));
+  main.appendChild(cardSelfCheck());
+  main.appendChild(cardData());
 
-  // ---- 大模型
-  const llmCard = el("div", { class: "card" });
-  llmCard.appendChild(el("h2", { style: "margin-top:0", text: "大模型（生成例句素材）" }));
+  toggleTTSFields();
+  toggleImageFields();
+  runSelfCheck();
+  loadDataLocation();
+}
+
+function cardShell(title, subtitle) {
+  const card = el("div", { class: "card" });
+  card.appendChild(el("h2", { style: "margin-top:0", text: title }));
+  if (subtitle) {
+    card.appendChild(el("p", { class: "faint", style: "margin:-6px 0 14px", text: subtitle }));
+  }
+  return card;
+}
+
+function cardLLM(cfg) {
+  const llm = cfg.llm || {};
+  const presets = (state.catalog && state.catalog.llm_presets) || {};
+  const card = cardShell("大模型", "负责生成例句、场景描述和中文说法。任何 OpenAI 兼容的端点都可以。");
 
   const presetSel = el("select", { id: "llm-preset", onChange: onPresetChange });
   for (const key of Object.keys(presets)) {
@@ -1079,42 +2178,51 @@ function renderSettings(main) {
     if (key === llm.preset) opt.selected = true;
     presetSel.appendChild(opt);
   }
-  llmCard.appendChild(el("label", { class: "field" }, [el("span", { text: "厂商" }), presetSel]));
+  card.appendChild(el("div", { class: "grid2" }, [
+    el("label", { class: "field" }, [el("span", { class: "lab", text: "厂商" }), presetSel]),
+    el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "模型名" }),
+      el("input", { type: "text", id: "llm-model", value: llm.model || "", placeholder: "deepseek-chat" }),
+    ]),
+  ]));
+  card.appendChild(el("div", { class: "hint", id: "preset-hint", text: (presets[llm.preset] || {}).hint || "" }));
 
-  const presetHint = el("div", { class: "hint", id: "preset-hint", text: (presets[llm.preset] || {}).hint || "" });
-  llmCard.appendChild(presetHint);
+  card.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: "接口地址 base_url" }),
+    el("input", { type: "text", id: "llm-base", value: llm.base_url || "", placeholder: "https://api.deepseek.com/v1" }),
+  ]));
+  card.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: "API Key" }),
+    el("input", {
+      type: "password", id: "llm-key", value: "",
+      placeholder: llm.api_key_set ? "已保存，留空表示不改动" : "粘贴 API Key",
+    }),
+  ]));
+  card.appendChild(el("div", { class: "row" }, [
+    btn("保存", { class: "btn primary", onClick: saveLLM }, "check"),
+    btn("测试连接", { class: "btn", id: "test-llm", onClick: testLLM }, "spark"),
+  ]));
+  card.appendChild(el("div", { id: "llm-msg" }));
+  return card;
+}
 
-  const baseInput = el("input", { type: "text", id: "llm-base", value: llm.base_url || "", placeholder: "https://api.deepseek.com/v1" });
-  llmCard.appendChild(el("label", { class: "field" }, [el("span", { text: "接口地址 base_url" }), baseInput]));
-
-  const keyInput = el("input", {
-    type: "password", id: "llm-key", value: "",
-    placeholder: llm.api_key_set ? "已保存，留空表示不改动" : "粘贴 API Key",
-  });
-  llmCard.appendChild(el("label", { class: "field" }, [el("span", { text: "API Key" }), keyInput]));
-
-  const modelInput = el("input", { type: "text", id: "llm-model", value: llm.model || "", placeholder: "deepseek-chat" });
-  llmCard.appendChild(el("label", { class: "field" }, [el("span", { text: "模型名" }), modelInput]));
-
-  const llmRow = el("div", { class: "row" }, [
-    el("button", { class: "btn primary", onClick: saveLLM, text: "保存" }),
-    el("button", { class: "btn", id: "test-llm", onClick: testLLM, text: "测试连接" }),
-  ]);
-  llmCard.appendChild(llmRow);
-  llmCard.appendChild(el("div", { id: "llm-msg" }));
-  main.appendChild(llmCard);
-
-  // ---- 语音
-  const ttsCard = el("div", { class: "card" });
-  ttsCard.appendChild(el("h2", { style: "margin-top:0", text: "语音（例句发音）" }));
+function cardTTS(cfg) {
+  const tts = cfg.tts || {};
+  const oa = tts.openai || {};
+  const card = cardShell("语音", "每条例句都会合成一条音频。Edge 免费且不需要密钥，是默认选择。");
 
   const engineSel = el("select", { id: "tts-engine", onChange: toggleTTSFields });
-  for (const [value, label] of [["edge", "Edge 语音（免费，需要联网）"], ["openai", "大模型语音（需要额外配置）"]]) {
-    const opt = el("option", { value: value, text: label });
-    if (value === (tts.engine || "edge")) opt.selected = true;
+  for (const pair of [
+    ["edge", "Edge 语音（免费，需要联网）"],
+    ["openai", "大模型语音（需要额外配置）"],
+  ]) {
+    const opt = el("option", { value: pair[0], text: pair[1] });
+    if (pair[0] === (tts.engine || "edge")) opt.selected = true;
     engineSel.appendChild(opt);
   }
-  ttsCard.appendChild(el("label", { class: "field" }, [el("span", { text: "语音引擎" }), engineSel]));
+  card.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: "语音引擎" }), engineSel,
+  ]));
 
   const voices = ((state.catalog && state.catalog.tts_voices) || {}).edge || [];
   const voiceSel = el("select", { id: "tts-voice" });
@@ -1123,65 +2231,173 @@ function renderSettings(main) {
     if (v.id === tts.voice) opt.selected = true;
     voiceSel.appendChild(opt);
   }
-  ttsCard.appendChild(el("label", { class: "field", id: "voice-field" }, [el("span", { text: "音色" }), voiceSel]));
-
   const rateInput = el("input", { type: "text", id: "tts-rate", value: tts.rate || "+0%", placeholder: "+0%" });
-  ttsCard.appendChild(el("label", { class: "field", id: "rate-field" }, [el("span", { text: "语速（如 -10% / +0%）" }), rateInput]));
+  card.appendChild(el("div", { class: "grid2", id: "edge-fields" }, [
+    el("label", { class: "field", id: "voice-field" }, [el("span", { class: "lab", text: "音色" }), voiceSel]),
+    el("label", { class: "field", id: "rate-field" }, [el("span", { class: "lab", text: "语速（如 -10% / +0%）" }), rateInput]),
+  ]));
 
-  const oa = tts.openai || {};
   const oaBox = el("div", { id: "openai-tts" });
-  const oaBase = el("input", { type: "text", id: "tts-base", value: oa.base_url || "", placeholder: "https://api.openai.com/v1" });
-  const oaKey = el("input", { type: "password", id: "tts-key", value: "", placeholder: oa.api_key_set ? "已保存，留空表示不改动" : "API Key" });
-  const oaModel = el("input", { type: "text", id: "tts-model", value: oa.model || "tts-1", placeholder: "tts-1" });
-  const oaVoice = el("input", { type: "text", id: "tts-openai-voice", value: oa.voice || "alloy", placeholder: "alloy" });
-  oaBox.appendChild(el("label", { class: "field" }, [el("span", { text: "base_url" }), oaBase]));
-  oaBox.appendChild(el("label", { class: "field" }, [el("span", { text: "API Key" }), oaKey]));
-  oaBox.appendChild(el("label", { class: "field" }, [el("span", { text: "模型" }), oaModel]));
-  oaBox.appendChild(el("label", { class: "field" }, [el("span", { text: "音色" }), oaVoice]));
-  ttsCard.appendChild(oaBox);
+  oaBox.appendChild(el("div", { class: "grid2" }, [
+    el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "base_url" }),
+      el("input", { type: "text", id: "tts-base", value: oa.base_url || "", placeholder: "https://api.openai.com/v1" }),
+    ]),
+    el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "模型" }),
+      el("input", { type: "text", id: "tts-model", value: oa.model || "tts-1", placeholder: "tts-1" }),
+    ]),
+  ]));
+  oaBox.appendChild(el("div", { class: "grid2" }, [
+    el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "API Key" }),
+      el("input", { type: "password", id: "tts-key", value: "", placeholder: oa.api_key_set ? "已保存，留空表示不改动" : "API Key" }),
+    ]),
+    el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "音色" }),
+      el("input", { type: "text", id: "tts-openai-voice", value: oa.voice || "alloy", placeholder: "alloy" }),
+    ]),
+  ]));
+  card.appendChild(oaBox);
 
-  const ttsRow = el("div", { class: "row" }, [
-    el("button", { class: "btn primary", onClick: saveTTS, text: "保存" }),
-    el("button", { class: "btn", id: "test-tts", onClick: testTTS, text: "试听一句" }),
-  ]);
-  ttsCard.appendChild(ttsRow);
-  ttsCard.appendChild(el("div", { id: "tts-msg" }));
-  main.appendChild(ttsCard);
+  card.appendChild(el("div", { class: "row" }, [
+    btn("保存", { class: "btn primary", onClick: saveTTS }, "check"),
+    btn("试听一句", { class: "btn", id: "test-tts", onClick: testTTS }, "play"),
+  ]));
+  card.appendChild(el("div", { id: "tts-msg" }));
+  return card;
+}
 
-  // ---- 学习
+function cardImages(cfg) {
+  const img = cfg.images || {};
+  const gen = img.llm || {};
+  const sources = (state.catalog && state.catalog.image_sources) || [];
+  const presets = (state.catalog && state.catalog.image_presets) || {};
+  const card = cardShell(
+    "场景配图",
+    "「场景」是这套方法最关键的一环，但它最容易退化成一句中译英。配一张图会好很多 —— 看图是瞬时的，读中文不是。"
+  );
+
+  const srcSel = el("select", { id: "img-source", onChange: toggleImageFields });
+  for (const s of sources) {
+    const opt = el("option", { value: s.id, text: s.label });
+    if (s.id === (img.source || "search")) opt.selected = true;
+    srcSel.appendChild(opt);
+  }
+  card.appendChild(el("div", { class: "grid2" }, [
+    el("label", { class: "field" }, [el("span", { class: "lab", text: "图片来源" }), srcSel]),
+    el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "每个包最多配几张（0 = 每条例句都配）" }),
+      el("input", { type: "number", id: "img-max", min: "0", max: "30", value: img.max_per_lesson || 0 }),
+    ]),
+  ]));
+  const current = sources.find((s) => s.id === (img.source || "search"));
+  if (current) card.appendChild(el("div", { class: "hint", text: current.what }));
+
+  const llmBox = el("div", { id: "img-llm" });
+  const presetSel = el("select", { id: "img-preset", onChange: onImagePresetChange });
+  for (const key of Object.keys(presets)) {
+    const opt = el("option", { value: key, text: presets[key].label });
+    if (key === (gen.preset || "zhipu")) opt.selected = true;
+    presetSel.appendChild(opt);
+  }
+  llmBox.appendChild(el("div", { class: "grid2" }, [
+    el("label", { class: "field" }, [el("span", { class: "lab", text: "画图厂商" }), presetSel]),
+    el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "模型名" }),
+      el("input", { type: "text", id: "img-model", value: gen.model || "", placeholder: "cogview-3-flash" }),
+    ]),
+  ]));
+  llmBox.appendChild(el("div", { class: "hint", id: "img-preset-hint", text: (presets[gen.preset || "zhipu"] || {}).hint || "" }));
+  llmBox.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: "base_url" }),
+    el("input", { type: "text", id: "img-base", value: gen.base_url || "", placeholder: "https://open.bigmodel.cn/api/paas/v4" }),
+  ]));
+  llmBox.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: "API Key" }),
+    el("input", {
+      type: "password", id: "img-key", value: "",
+      placeholder: gen.api_key_set ? "已保存，留空表示不改动" : "画图用的密钥",
+    }),
+  ]));
+  card.appendChild(llmBox);
+
+  card.appendChild(el("div", { class: "row" }, [
+    btn("保存", { class: "btn primary", onClick: saveImages }, "check"),
+    btn("试一张", { class: "btn", id: "test-img", onClick: testImage }, "image"),
+  ]));
+  card.appendChild(el("div", { class: "faint", style: "margin-top:10px",
+    text: "已生成的训练包不会自动补图 —— 图片是生成时抓的。要补的话去训练包详情里点「补场景图」。" }));
+  card.appendChild(el("div", { id: "img-msg" }));
+  return card;
+}
+
+function cardStudy(cfg) {
   const study = cfg.study || {};
-  const studyCard = el("div", { class: "card" });
-  studyCard.appendChild(el("h2", { style: "margin-top:0", text: "学习" }));
-  const exCount = el("input", { type: "number", id: "study-examples", value: study.examples_per_lesson || 8, min: "3", max: "20" });
-  studyCard.appendChild(el("label", { class: "field" }, [el("span", { text: "每个训练包生成几条例句（理论要的是「多例子的重复」，太少不够）" }), exCount]));
-  const newPerDay = el("input", { type: "number", id: "study-new", value: study.new_per_day || 20, min: "0", max: "200" });
-  studyCard.appendChild(el("label", { class: "field" }, [el("span", { text: "每天最多引入多少张新卡" }), newPerDay]));
+  const card = cardShell("学习", "这些参数影响每个训练包怎么生成、每天练多少。");
+
+  card.appendChild(el("div", { class: "grid2" }, [
+    el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "每个训练包生成几条例句（理论要的是「多例子的重复」，太少不够）" }),
+      el("input", { type: "number", id: "study-examples", value: study.examples_per_lesson || 8, min: "3", max: "20" }),
+    ]),
+    el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "每天最多引入多少张新卡" }),
+      el("input", { type: "number", id: "study-new", value: study.new_per_day || 5, min: "0", max: "200" }),
+    ]),
+  ]));
+
   const zhPolicy = el("select", { id: "study-zh" });
-  for (const [value, label] of [["rotate", "每次随机换一种说法（推荐）"], ["fixed", "固定显示场景描述"]]) {
-    const opt = el("option", { value: value, text: label });
-    if (value === (study.zh_variant_policy || "rotate")) opt.selected = true;
+  for (const pair of [
+    ["rotate", "每次随机换一种说法（推荐）"],
+    ["fixed", "固定显示场景描述"],
+  ]) {
+    const opt = el("option", { value: pair[0], text: pair[1] });
+    if (pair[0] === (study.zh_variant_policy || "rotate")) opt.selected = true;
     zhPolicy.appendChild(opt);
   }
-  studyCard.appendChild(el("label", { class: "field" }, [el("span", { text: "中文提示的显示方式" }), zhPolicy]));
-  studyCard.appendChild(el("div", { class: "row" }, [
-    el("button", { class: "btn primary", onClick: saveStudy, text: "保存" }),
+  card.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: "中文提示的显示方式" }), zhPolicy,
   ]));
-  studyCard.appendChild(el("div", { id: "study-msg" }));
-  main.appendChild(studyCard);
 
-  // ---- 自检与数据
-  const sysCard = el("div", { class: "card" });
-  sysCard.appendChild(el("h2", { style: "margin-top:0", text: "自检与数据" }));
-  const selfHost = el("div", { id: "selfcheck" });
-  sysCard.appendChild(selfHost);
-  sysCard.appendChild(el("div", { class: "row", style: "margin-top:12px" }, [
-    el("button", { class: "btn", onClick: runSelfCheck, text: "跑一遍自检" }),
-    el("button", { class: "btn", onClick: doBackup, text: "备份数据库" }),
+  card.appendChild(el("div", { class: "row" }, [btn("保存", { class: "btn primary", onClick: saveStudy }, "check")]));
+  card.appendChild(el("div", { id: "study-msg" }));
+  return card;
+}
+
+function cardSelfCheck() {
+  const card = cardShell("自检", "有东西不对劲时先看这里。第一站永远是这一块。");
+  card.appendChild(el("div", { id: "selfcheck" }));
+  card.appendChild(el("div", { class: "row", style: "margin-top:12px" }, [
+    btn("重跑自检", { class: "btn", onClick: runSelfCheck }, "refresh"),
   ]));
-  main.appendChild(sysCard);
+  return card;
+}
 
-  toggleTTSFields();
-  runSelfCheck();
+function cardData() {
+  const card = cardShell(
+    "数据",
+    "数据会长大：音频每条约几十 KB，场景图每张几十到几百 KB。攒多了可以把整个数据目录搬到别的盘。"
+  );
+
+  const host = el("div", { id: "data-location" });
+  card.appendChild(host);
+
+  card.appendChild(el("label", { class: "field", style: "margin-top:14px" }, [
+    el("span", { class: "lab", text: "搬到（留空 = 恢复平台默认位置）" }),
+    el("input", { type: "text", id: "data-path", placeholder: "D:\\Etude" }),
+  ]));
+  card.appendChild(el("div", { class: "row" }, [
+    btn("把数据搬过去", { class: "btn primary", onClick: saveData }, "drive"),
+    btn("只改位置、不搬数据", { class: "btn", onClick: () => saveData(false) }, "left"),
+    btn("备份数据库", { class: "btn", onClick: doBackup }, "check"),
+  ]));
+  card.appendChild(el("div", { class: "hint",
+    text: "搬完之后要重启程序才生效 —— 数据库连接和缓存都是进程级的，"
+        + "运行中换目录会让一半请求读旧库、一半读新库。旧位置的数据**不会自动删**，"
+        + "确认新的能用了再自己去删。" }));
+  card.appendChild(el("div", { id: "data-msg" }));
+  return card;
 }
 
 async function onPresetChange(e) {
@@ -1200,14 +2416,29 @@ async function onPresetChange(e) {
   }
 }
 
+function onImagePresetChange(e) {
+  const name = e.target.value;
+  const presets = (state.catalog && state.catalog.image_presets) || {};
+  const picked = presets[name] || {};
+  const hint = $("#img-preset-hint");
+  if (hint) hint.textContent = picked.hint || "";
+  const base = $("#img-base"), model = $("#img-model");
+  if (base && picked.base_url) base.value = picked.base_url;
+  if (model && picked.model) model.value = picked.model;
+}
+
 function toggleTTSFields() {
   const engine = ($("#tts-engine") || {}).value || "edge";
   const box = $("#openai-tts");
-  const voiceField = $("#voice-field");
-  const rateField = $("#rate-field");
+  const edge = $("#edge-fields");
   if (box) box.style.display = engine === "openai" ? "block" : "none";
-  if (voiceField) voiceField.style.display = engine === "edge" ? "block" : "none";
-  if (rateField) rateField.style.display = engine === "edge" ? "block" : "none";
+  if (edge) edge.style.display = engine === "edge" ? "grid" : "none";
+}
+
+function toggleImageFields() {
+  const source = ($("#img-source") || {}).value || "search";
+  const box = $("#img-llm");
+  if (box) box.style.display = source === "llm" ? "block" : "none";
 }
 
 function readValue(id) {
@@ -1226,7 +2457,7 @@ async function saveLLM() {
     state.config = data.config;
     const input = $("#llm-key");
     if (input) { input.value = ""; input.placeholder = "已保存，留空表示不改动"; }
-    msg.appendChild(el("div", { class: "hint", text: "已保存。" }));
+    msg.appendChild(el("div", { class: "hint ok", text: "已保存。" }));
   } catch (err) {
     msg.appendChild(errorBlock(err));
   }
@@ -1235,10 +2466,9 @@ async function saveLLM() {
 async function saveTTS() {
   const msg = $("#tts-msg");
   clear(msg);
-  const engine = readValue("tts-engine") || "edge";
   const patch = {
     tts: {
-      engine: engine,
+      engine: readValue("tts-engine") || "edge",
       voice: readValue("tts-voice") || "en-US-AriaNeural",
       rate: readValue("tts-rate") || "+0%",
       openai: {
@@ -1255,7 +2485,34 @@ async function saveTTS() {
     state.config = data.config;
     const input = $("#tts-key");
     if (input) { input.value = ""; input.placeholder = "已保存，留空表示不改动"; }
-    msg.appendChild(el("div", { class: "hint", text: "已保存。已生成的语音不受影响，新生成的会用新音色。" }));
+    msg.appendChild(el("div", { class: "hint ok", text: "已保存。已生成的语音不受影响，新生成的会用新音色。" }));
+  } catch (err) {
+    msg.appendChild(errorBlock(err));
+  }
+}
+
+async function saveImages() {
+  const msg = $("#img-msg");
+  clear(msg);
+  const patch = {
+    images: {
+      source: readValue("img-source") || "search",
+      max_per_lesson: Number(readValue("img-max")) || 0,
+      llm: {
+        preset: readValue("img-preset"),
+        base_url: readValue("img-base"),
+        model: readValue("img-model"),
+      },
+    },
+  };
+  const key = readValue("img-key");
+  if (key) patch.images.llm.api_key = key;
+  try {
+    const data = await api("/api/config", { method: "POST", body: JSON.stringify(patch) });
+    state.config = data.config;
+    const input = $("#img-key");
+    if (input) { input.value = ""; input.placeholder = "已保存，留空表示不改动"; }
+    msg.appendChild(el("div", { class: "hint ok", text: "已保存。新生成的训练包会按这个设置配图。" }));
   } catch (err) {
     msg.appendChild(errorBlock(err));
   }
@@ -1267,13 +2524,13 @@ async function saveStudy() {
   const patch = {
     study: {
       examples_per_lesson: Number(readValue("study-examples")) || 8,
-      new_per_day: Number(readValue("study-new")) || 20,
+      new_per_day: Number(readValue("study-new")) || 0,
       zh_variant_policy: readValue("study-zh") || "rotate",
     },
   };
   try {
     await api("/api/config", { method: "POST", body: JSON.stringify(patch) });
-    msg.appendChild(el("div", { class: "hint", text: "已保存。" }));
+    msg.appendChild(el("div", { class: "hint ok", text: "已保存。" }));
   } catch (err) {
     msg.appendChild(errorBlock(err));
   }
@@ -1281,40 +2538,63 @@ async function saveStudy() {
 
 async function testLLM() {
   const msg = $("#llm-msg");
-  const btn = $("#test-llm");
+  const node = $("#test-llm");
   clear(msg);
-  if (btn) btn.disabled = true;
-  const box = el("div", { class: "hint" }, [el("i", { class: "spin" }), " 正在连模型…"]);
-  msg.appendChild(box);
+  if (node) node.disabled = true;
+  msg.appendChild(spin("正在连模型…"));
   try {
     const data = await api("/api/config/test-llm", { method: "POST" });
     clear(msg);
-    msg.appendChild(el("div", { class: "hint", text: "连通了，往返 " + data.seconds + " 秒。" }));
+    msg.appendChild(el("div", { class: "hint ok", text: "连通了，往返 " + data.seconds + " 秒。" }));
   } catch (err) {
     clear(msg);
     msg.appendChild(errorBlock(err));
   } finally {
-    if (btn) btn.disabled = false;
+    if (node) node.disabled = false;
   }
 }
 
 async function testTTS() {
   const msg = $("#tts-msg");
-  const btn = $("#test-tts");
+  const node = $("#test-tts");
   clear(msg);
-  if (btn) btn.disabled = true;
-  msg.appendChild(el("div", { class: "hint" }, [el("i", { class: "spin" }), " 正在合成…"]));
+  if (node) node.disabled = true;
+  msg.appendChild(spin("正在合成…"));
   try {
     const data = await api("/api/config/test-tts", { method: "POST" });
     clear(msg);
-    msg.appendChild(el("div", { class: "hint", text: "合成成功（" + data.bytes + " 字节）。" }));
+    msg.appendChild(el("div", { class: "hint ok", text: "合成成功（" + data.bytes + " 字节），正在播放。" }));
     const name = await findLatestAudio();
     if (name) playAudio(name);
   } catch (err) {
     clear(msg);
     msg.appendChild(errorBlock(err));
   } finally {
-    if (btn) btn.disabled = false;
+    if (node) node.disabled = false;
+  }
+}
+
+async function testImage() {
+  const msg = $("#img-msg");
+  const node = $("#test-img");
+  clear(msg);
+  if (node) node.disabled = true;
+  msg.appendChild(spin("正在取一张图…（用模型画的话要十几秒）"));
+  try {
+    const data = await api("/api/config/test-image", { method: "POST" });
+    clear(msg);
+    const box = el("div", { class: "hint ok" });
+    box.appendChild(el("div", { text: "成功，拿到一张 " + Math.round(data.bytes / 1024) + " KB 的图：" }));
+    box.appendChild(el("img", {
+      src: imagePath(data.name),
+      style: "margin-top:8px;max-width:100%;border-radius:10px;border:1px solid var(--line)",
+    }));
+    msg.appendChild(box);
+  } catch (err) {
+    clear(msg);
+    msg.appendChild(errorBlock(err));
+  } finally {
+    if (node) node.disabled = false;
   }
 }
 
@@ -1339,54 +2619,221 @@ async function runSelfCheck() {
   const host = $("#selfcheck");
   if (!host) return;
   clear(host);
-  host.appendChild(el("div", { class: "faint" }, [el("i", { class: "spin" }), " 检查中…"]));
+  host.appendChild(el("div", { class: "row" }, [
+    el("i", { class: "spin" }), el("span", { class: "faint", text: "检查中…" }),
+  ]));
+  let report;
   try {
-    const report = await api("/api/selfcheck");
-    clear(host);
-    const table = el("table", { class: "self" });
-    for (const item of report.items || []) {
-      const chip = el("span", {
-        class: "chip " + (item.level === "ok" ? "ok" : item.level === "warn" ? "warn" : "bad"),
-        text: item.level === "ok" ? "正常" : item.level === "warn" ? "注意" : "有问题",
-      });
-      const right = el("td");
-      right.appendChild(chip);
-      right.appendChild(el("div", { style: "margin-top:4px", text: item.detail }));
-      if (item.hint) right.appendChild(el("div", { class: "faint", style: "margin-top:4px", text: "→ " + item.hint }));
-      table.appendChild(el("tr", null, [el("td", { text: item.name }), right]));
-    }
-    host.appendChild(table);
+    report = await api("/api/selfcheck");
   } catch (err) {
+    // 用户可能已经切到别的页面了，这时 #selfcheck 已经是另一个节点。
+    const same = $("#selfcheck");
+    if (same !== host) return;
     clear(host);
     host.appendChild(errorBlock(err));
+    return;
+  }
+  if ($("#selfcheck") !== host) return;
+  clear(host);
+
+  const LEVEL = { ok: "正常", warn: "注意", bad: "有问题" };
+  const table = el("table", { class: "self" });
+  for (const item of report.items || []) {
+    const level = LEVEL[item.level] ? item.level : "bad";
+    const right = el("td");
+    right.appendChild(el("span", { class: "chip " + level, text: LEVEL[level] }));
+    right.appendChild(el("div", { style: "margin-top:4px", text: item.detail }));
+    if (item.hint) {
+      right.appendChild(el("div", { class: "faint", style: "margin-top:4px", text: "→ " + item.hint }));
+    }
+    table.appendChild(el("tr", null, [el("td", { text: item.name }), right]));
+  }
+  host.appendChild(table);
+}
+
+// ------------------------------------------------------------------ 数据
+
+const DATA_SOURCE_LABEL = {
+  default: "平台默认位置",
+  bootstrap: "你在设置里指过的位置",
+  ETUDE_DATA_DIR: "环境变量 ETUDE_DATA_DIR 钉住的",
+};
+
+async function loadDataLocation() {
+  const host = $("#data-location");
+  if (!host) return;
+  clear(host);
+  host.appendChild(spin("正在读取数据目录…"));
+
+  let info;
+  try {
+    info = await api("/api/data-location");
+  } catch (err) {
+    if ($("#data-location") !== host) return;
+    clear(host);
+    host.appendChild(errorBlock(err));
+    return;
+  }
+  if ($("#data-location") !== host) return;
+  clear(host);
+
+  const kv = el("dl", { class: "kv" });
+  for (const pair of [
+    ["当前目录", info.current],
+    ["来源", DATA_SOURCE_LABEL[info.source] || info.source],
+    ["占用", humanSize(info.bytes) + "（" + info.files + " 个文件）"],
+    ["所在盘剩余", humanSize(info.free_bytes)],
+    ["平台默认位置", info.default],
+  ]) {
+    kv.appendChild(el("dt", { text: pair[0] }));
+    kv.appendChild(el("dd", { text: pair[1] }));
+  }
+  host.appendChild(kv);
+
+  const chips = el("div", { class: "chips", style: "margin-top:12px" });
+  chips.appendChild(el("span", {
+    class: "chip " + (info.moved ? "accent" : "ok"),
+    text: info.moved ? "已搬到别的位置" : "在默认位置",
+  }));
+  if (info.locked_by_env) chips.appendChild(el("span", { class: "chip warn", text: "被环境变量锁住" }));
+  host.appendChild(chips);
+
+  if (info.locked_by_env) {
+    host.appendChild(el("div", {
+      class: "hint", style: "margin-top:10px",
+      text: "环境变量 ETUDE_DATA_DIR 的优先级高于这里的设置，所以下面的按钮按了也不会生效。"
+          + "先去系统里删掉那个环境变量（或直接把它改成你想要的位置），再重启程序。",
+    }));
+  }
+
+  if (info.moved) {
+    host.appendChild(el("div", { class: "row", style: "margin-top:10px" }, [
+      btn("改回平台默认位置", {
+        class: "btn sm ghost",
+        onClick: () => saveData(false, ""),
+      }, "left"),
+    ]));
   }
 }
 
+// 「把数据搬过去」/「只改位置、不搬数据」/「改回默认位置」都走这里。
+// 三个入口共用同一个函数，是因为它们的差别只有 copy 和目标路径两件事，
+// 拆成三个函数只会让「搬迁的四条约束」被写三遍、然后慢慢长歪。
+let dataBusy = false;
+
+async function saveData(copy, pathOverride) {
+  const msg = $("#data-msg");
+  if (!msg || dataBusy) return;
+  clear(msg);
+
+  const raw = typeof pathOverride === "string" ? pathOverride : readValue("data-path");
+  const goingDefault = !raw;
+  // 第一个参数既可能是「只改位置」按钮传进来的 false，也可能是
+  // onClick 顺手塞进来的事件对象。用 === false 明确判一次，
+  // 而不是靠真值判断 —— 否则事件对象会被当成 true。
+  const doCopy = copy !== false;
+
+  const question = goingDefault
+    ? "改回平台默认位置？\n\n只会改指针，当前目录里的数据不会删。\n重启程序后才生效。"
+    : (doCopy
+      ? "把整个数据目录复制到：\n" + raw + "\n\n旧位置的数据不会删。\n重启程序后才生效。继续？"
+      : "把数据目录指向：\n" + raw + "\n\n不会复制任何数据，新位置从空数据开始。\n"
+        + "老数据仍在原地，随时可以改回来。\n重启程序后才生效。继续？");
+  if (!confirm(question)) return;
+
+  dataBusy = true;
+  msg.appendChild(spin(goingDefault
+    ? "正在改回默认位置…"
+    : (doCopy ? "正在搬…有音频和图片的话要等一会儿。" : "正在改指针…")));
+  try {
+    const data = await api("/api/data-location", {
+      method: "POST",
+      body: JSON.stringify({ path: goingDefault ? "" : raw, copy: doCopy }),
+    });
+    clear(msg);
+    const box = el("div", { class: "hint ok" });
+    box.appendChild(el("div", { text: goingDefault ? "指针已经改回默认位置。" : "指针已经指向新位置。" }));
+    box.appendChild(el("div", { class: "mono", style: "margin-top:5px", text: data.moved_to || "" }));
+    if (data.copied) {
+      box.appendChild(el("div", {
+        class: "faint", style: "margin-top:5px",
+        text: "搬过去 " + data.copied + " 项。旧位置（" + data.left_behind + "）还留着 —— "
+            + "等新的能正常用了再自己去删。",
+      }));
+    }
+    if (data.restart_required) {
+      box.appendChild(el("div", {
+        style: "margin-top:6px", text: "现在要重启程序才会生效。",
+      }));
+    }
+    msg.appendChild(box);
+    const input = $("#data-path");
+    if (input) input.value = "";
+    loadDataLocation();
+  } catch (err) {
+    clear(msg);
+    msg.appendChild(errorBlock(err));
+  } finally {
+    dataBusy = false;
+  }
+}
+
+// 备份只做数据库。音频和图片是内容寻址的（名字就是内容的哈希），
+// 真丢了也能按原来的名字重新生成，跟着复制一遍是白占地方。
+let backupBusy = false;
+
 async function doBackup() {
+  const msg = $("#data-msg");
+  if (!msg || backupBusy) return;
+  backupBusy = true;
+  clear(msg);
+  msg.appendChild(spin("正在备份数据库…"));
   try {
     const data = await api("/api/backup", { method: "POST", body: JSON.stringify({}) });
-    alert("已备份到：\n" + data.path + "\n\n" + Math.round(data.bytes / 1024) + " KB");
+    clear(msg);
+    const box = el("div", { class: "hint ok" });
+    box.appendChild(el("div", { text: "备份好了（" + humanSize(data.bytes) + "）：" }));
+    box.appendChild(el("div", { class: "mono", style: "margin-top:5px", text: data.path }));
+    msg.appendChild(box);
   } catch (err) {
-    alert(err.message + (err.hint ? "\n" + err.hint : ""));
+    clear(msg);
+    msg.appendChild(errorBlock(err));
+  } finally {
+    backupBusy = false;
   }
 }
 
 // ------------------------------------------------------------------ 键盘
 
-document.addEventListener("keydown", (e) => {
+// 快捷键要么和侧边栏里写的一致，要么就别写在那儿。
+// 这里的每一档都走 grade() —— 跟鼠标点是**同一个函数**，
+// 所以不可能再出现「键盘能按、鼠标不能按」这种不一致。
+function handleKeys(e) {
   if (state.view !== "study") return;
   const tag = (e.target && e.target.tagName) || "";
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (!state.current || state.cursor >= state.queue.length) return;
 
+  const channel = state.current.card ? state.current.card.channel : "";
+
+  // 打字卡：Enter 先提交比对。已经在输入框里按 Enter 的那条由输入框自己处理。
+  if (e.key === "Enter" && channel === "type" && !state.revealed) {
+    e.preventDefault();
+    submitTyped();
+    return;
+  }
   if (e.key === " " || e.key === "Enter") {
     if (!state.revealed) { e.preventDefault(); reveal(); }
     return;
   }
-  if (["1", "2", "3", "4"].includes(e.key)) {
+  if (e.key === "1" || e.key === "2" || e.key === "3" || e.key === "4") {
     e.preventDefault();
     grade(Number(e.key) - 1);
   }
-});
+}
+
+document.addEventListener("keydown", handleKeys);
 
 // ------------------------------------------------------------ 错误上屏
 
@@ -1411,27 +2858,77 @@ window.addEventListener("error", (e) => {
 
 window.addEventListener("unhandledrejection", (e) => {
   const reason = e && e.reason;
-  const text = reason && reason.message ? reason.message : String(reason);
-  showFatal("有一个操作没做完", text);
+  showFatal("有一个操作没做完", (reason && reason.message) ? reason.message : String(reason));
 });
+
+// -------------------------------------------------------------- 渲染
+
+function render() {
+  const main = $("#app");
+  if (!main) return;
+  clear(main);
+
+  if (state.view === "study") renderStudy(main);
+  else if (state.view === "lessons") renderLessons(main);
+  else if (state.view === "plans") renderPlans(main);
+  else renderSettings(main);
+
+  // 侧边栏的交互键跟着视图走。它不在 #app 里，所以要单独画一次。
+  renderSideActions();
+  refreshCounts();
+  paintIcons();
+}
 
 // -------------------------------------------------------------- 启动
 
+function paintTheme() {
+  const set = document.documentElement.getAttribute("data-theme");
+  const dark = set ? set === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  const node = $("#theme");
+  if (!node) return;
+  clear(node);
+  node.appendChild(icon(dark ? "sun" : "moon", 16));
+  node.title = dark ? "切到浅色" : "切到深色";
+}
+
 async function boot() {
   // 主题：跟随系统，用户手动选过就听用户的。
-  const saved = localStorage.getItem("etude-theme");
+  let saved = null;
+  try { saved = localStorage.getItem("etude-theme"); } catch (e) { /* 隐私模式 */ }
   if (saved) document.documentElement.setAttribute("data-theme", saved);
-  $("#theme").addEventListener("click", () => {
-    const current = document.documentElement.getAttribute("data-theme");
-    const isDark = current ? current === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-    const next = isDark ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("etude-theme", next);
-  });
 
-  for (const btn of document.querySelectorAll("#nav button")) {
-    btn.addEventListener("click", () => setView(btn.dataset.view));
+  let side = null;
+  try { side = localStorage.getItem("etude-side"); } catch (e) { /* 同上 */ }
+  state.sideCollapsed = side === "collapsed";
+
+  paintTheme();
+  applySide();
+  paintIcons();
+
+  const themeBtn = $("#theme");
+  if (themeBtn) {
+    themeBtn.addEventListener("click", () => {
+      const set = document.documentElement.getAttribute("data-theme");
+      const dark = set ? set === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+      const next = dark ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("etude-theme", next); } catch (e) { /* 忽略 */ }
+      paintTheme();
+    });
   }
+
+  const collapse = $("#collapse");
+  if (collapse) collapse.addEventListener("click", toggleSide);
+
+  for (const button of document.querySelectorAll("#nav button")) {
+    button.addEventListener("click", () => setView(button.dataset.view));
+  }
+
+  // 浏览器前进/后退也要跟着切页面 —— 不然地址栏和内容会对不上。
+  window.addEventListener("hashchange", () => {
+    const next = viewFromHash();
+    if (next !== state.view) setView(next);
+  });
 
   try {
     const health = await api("/api/health");
@@ -1450,30 +2947,21 @@ async function boot() {
     }
   } catch (err) {
     const badge = $("#health");
-    badge.textContent = "连不上后端";
-    badge.className = "badge bad";
+    if (badge) {
+      clear(badge);
+      badge.textContent = "连不上后端";
+      badge.className = "badge bad";
+    }
     setBanner("bad", "连不上后端服务：" + err.message);
   }
 
+  // 这两个失败了不要紧：设置页/目标页各自会再报一次，
+  // 在启动阶段弹红条反而会盖住真正的版本不一致提示。
   try { state.config = await api("/api/config"); } catch (err) { /* 设置页会再报 */ }
   try { state.catalog = await api("/api/catalog"); } catch (err) { /* 同上 */ }
 
-  // 浏览器前进/后退也要跟着切页面 —— 不然地址栏和内容会对不上。
-  window.addEventListener("hashchange", () => {
-    const next = viewFromHash();
-    if (next !== state.view) setView(next);
-  });
-
   setView(viewFromHash());
   loadQueue();
-}
-
-function render() {
-  const main = $("#app");
-  clear(main);
-  if (state.view === "study") renderStudy(main);
-  else if (state.view === "lessons") renderLessons(main);
-  else renderSettings(main);
 }
 
 boot();

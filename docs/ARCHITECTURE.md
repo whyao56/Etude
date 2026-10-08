@@ -48,20 +48,22 @@ etude/
 │   ├── app/
 │   │   ├── __init__.py         ★ 版本号在这里；BLAS 线程限流也在这里
 │   │   ├── paths.py            ★ 全项目唯一判断「在不在 exe 里」的地方
+│   │   ├── storage.py          数据目录搬迁（只写指针，从不删旧数据）
 │   │   ├── config.py           设置的读写 + 厂商预置 + 密钥脱敏
-│   │   ├── prompts.py          ★ 理论 → 提示词的那一层
+│   │   ├── prompts.py          ★ 理论 → 提示词的那一层（含学习计划大纲）
 │   │   ├── providers/
 │   │   │   ├── llm.py          OpenAI 兼容协议 + 错误分诊
-│   │   │   └── tts.py          Edge TTS / OpenAI TTS + 内容寻址缓存
+│   │   │   ├── tts.py          Edge TTS / OpenAI TTS + 内容寻址缓存
+│   │   │   └── images.py       场景配图：图库检索 / 文生图 + 文件头嗅探
 │   │   ├── pipeline.py         ★ 生成流水线（作业表 / 逐条失败不拖垮整体）
-│   │   ├── db.py               SQLite：四张表 + readiness 计算
+│   │   ├── db.py               SQLite：五张表 + readiness 计算 + 迁移
 │   │   ├── srs.py              间隔重复（纯函数）
 │   │   ├── api.py              HTTP 接口
 │   │   ├── server.py           端口选择 + 优雅停止
 │   │   ├── desktop.py          原生窗口，失败返回 False
-│   │   └── selfcheck.py        八项自检
+│   │   └── selfcheck.py        九项自检
 │   ├── frontend/index.html     单文件界面（零构建、零 CDN）
-│   └── tests/                  113 项测试
+│   └── tests/                  187 项测试
 ├── scripts/
 │   ├── build_exe.py            打包编排
 │   ├── make_release.py         发版
@@ -84,23 +86,29 @@ etude/
 
 ## 三、数据模型
 
-四张表，全部在 `backend/app/db.py` 的 `SCHEMA` 里。用扁平字典出入，
+五张表，全部在 `backend/app/db.py` 的 `SCHEMA` 里。用扁平字典出入，
 不引 ORM —— 这些数据最终要原样变成 JSON 给前端，字典省掉一次转换；
 而且没有编译器的项目里，ORM 的字段名拼错只会在运行时炸。
 
 ```
-lessons ──┬── examples ──┬── cards ── reviews
-          │              │
-          └── swaps ─────┘（swaps 挂在 lesson 上，不挂 example）
+plans ──── lessons ──┬── examples ──┬── cards ── reviews
+                     │              │
+                     └── swaps ─────┘（swaps 挂在 lesson 上，不挂 example）
 ```
 
 | 表 | 一行是什么 | 关键字段 |
 |---|---|---|
-| `lessons` | 一个训练包 | `target`（用户输入的那个词/句）、`kind`、`status`、`error` |
-| `examples` | 一条例句 | `sentence`、`scene_en`、`scene_zh`、`zh_variants`(JSON)、`audio_path`、`audio_voice` |
+| `plans` | 一个学习计划（0.0.2） | `language`、`goal_kind`(fluency/exam/custom)、`goal_label`、`goal_detail`、`domains`(JSON)、`target_count`、`outline`(JSON)、`status` |
+| `lessons` | 一个训练包 | `target`（用户输入的那个词/句）、`kind`、`status`、`error`、`language`、`plan_id`(0 = 不属于任何计划) |
+| `examples` | 一条例句 | `sentence`、`scene_en`、`scene_zh`、`zh_variants`(JSON)、`audio_path`、`audio_voice`、`scene_image`、`image_query`(JSON) |
 | `swaps` | 一组换词候选 | `role`(主/谓/宾)、`original`、`candidates`(JSON)、`samples`(JSON) |
 | `cards` | 一张卡 = (例句, 通道) | `due_at`、`interval`、`ease`、`reps`、`lapses`、`introduced` |
 | `reviews` | 一次评分 | `card_id`、`grade`、`seconds`、`at` |
+
+**`plans` 是一条独立的线**：它只负责「要建哪些训练包」，
+建出来的包就是普通的 `lessons` 行（`plan_id` 指回去）。
+所以计划被删掉时，`lessons` 可以留着、也可以一起删（接口上给了开关）——
+计划的产物本身是能独立使用的。
 
 ### 主键是 `(例句, 通道)`，不是 `(单词)`
 
@@ -116,7 +124,7 @@ UNIQUE (lesson_id, example_id, channel)
 ### `example_id = 0` 是合法值
 
 `cards.example_id` 允许为 0，表示「这张卡作用于整个训练包，不属于任何一条例句」。
-0.0.1 里没有产生这种卡的代码路径，但字段和注释保留着 ——
+0.0.x 里没有产生这种卡的代码路径，但字段和注释保留着 ——
 将来的「整包综合复习」会用到，而且加一个值比改主键便宜。
 
 ### 时间戳一律 UTC ISO 字符串
@@ -145,10 +153,11 @@ def test_frozen_check_happens_in_exactly_one_place():
 ### 4.2 `ready` ≠ `complete`
 
 ```python
-readiness(lesson_id) -> {
-    "ready": bool,      # 现在能不能练（有例句就行）
-    "complete": bool,   # 素材齐不齐（音频也在）
-    "problems": [...],  # 具体缺什么，直接给用户看
+readiness(lesson_id, expect_images=None) -> {
+    "ready": bool,            # 现在能不能练（有例句就行）
+    "complete": bool,         # 素材齐不齐（音频 + 该有的配图也在）
+    "images_expected": bool,  # 这一包到底要不要图（来源选 off 时是 False）
+    "problems": [...],        # 具体缺什么，直接给用户看
     ...
 }
 ```
@@ -163,7 +172,11 @@ readiness(lesson_id) -> {
   `status='ready'` 只表示「生成任务跑完了」，不表示「能用」。
   这两者的差集，就是「看着配好了、用起来没反应」的全部来源。
 
-有**三组**测试专门打这个区分（`tests/test_storage_pipeline.py`）。
+**`images_expected` 是 0.0.2 加的一层**：配图来源选 `off` 时，
+「没有图」是正常的，不该报成缺素材。少了这个字段，
+选了「不要图」的用户会在每个训练包上看到一条永远修不好的缺图提示。
+
+有**四组**测试专门打这个区分（`tests/test_storage_pipeline.py`）。
 
 ### 4.3 音频文件名是内容寻址的
 
@@ -232,6 +245,75 @@ else if (key.slice(0, 2) === "on") {
 **为什么**：从窗口关闭回调里调 `server.join()` 会和 uvicorn 的线程互相等，
 直接死锁 —— 表现是「关了窗口，进程还在任务管理器里」。
 现在的顺序是：窗口关闭 → 置标志 → 主线程 join(超时 5s)。
+
+### 4.8 迁移必须跑在建表之前
+
+```python
+# backend/app/db.py  connect()
+conn = sqlite3.connect(...)
+_migrate(conn)              # ← 先迁移
+conn.executescript(SCHEMA)  # ← 再建表
+```
+
+**为什么这个顺序不能反**（0.0.2 修的就是这个）：
+
+老库（0.0.1 建的）里 `lessons` 表已经存在，但没有 `plan_id` 字段。
+如果先跑建表脚本：
+
+1. `CREATE TABLE IF NOT EXISTS lessons (...)` —— **空操作**，表already存在；
+2. `CREATE INDEX idx_lessons_plans ON lessons(plan_id)` —— 表里没有这一列，
+   直接 `sqlite3.OperationalError: no such column: plan_id`。
+
+于是**每个从 0.0.1 升上来的用户，程序每次启动都崩**。
+而开发机上永远是全新的库，这条路径永远不出现 —— 这就是它危险的地方：
+一个只在「升级」这条路上才踩得到的坑，而升级恰恰是唯一没法用开发机复现的场景。
+
+对调之后两侧都安全：迁移用 `PRAGMA table_info` 查实际结构，缺什么补什么；
+建表脚本的 `IF NOT EXISTS` 对已迁移的表同样是空操作。
+
+`tests/test_upgrade.py` 里内嵌了 0.0.1 的 `SCHEMA`，
+造一个**带非默认复习进度**的老库，验证迁移之后进度原封不动。
+
+### 4.9 配图必须是图片，而判断格式只看文件头
+
+```python
+# backend/app/providers/images.py
+def _sniff(data: bytes) -> str:
+    if data[:3] == b"\xff\xd8\xff": return ".jpg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n": return ".png"
+    ...
+    return ""          # ← 认不出来就返回空，让调用方抛错
+```
+
+**三条都不许信**：URL 后缀、响应的 `Content-Type`、以及「字节数大于 0」。
+
+**为什么**：图床和 CDN 出错时最常见的行为是返回一个 **200 + 一页 HTML 错误页**。
+按后缀或按响应头判断，就会把这一页 HTML 存成 `xxx.jpg` ——
+一张**永远加载不出来的假图**，而「文件非空」这种断言会一路放行，
+界面上表现为「图裂了」，排查方向会跑到前端去。
+
+0.0.1 的 `_sniff` 认不出格式时兜底返回 `.jpg`，这个兜底正是漏洞本身。
+现在返回空串，调用方抛 `ImageError` 并带上原因。
+
+### 4.10 数据目录在哪，只由 `paths.py` 回答
+
+数据目录可能有三个来源，优先级固定：
+
+```
+ETUDE_DATA_DIR 环境变量  >  bootstrap.json 指针  >  平台默认（%LOCALAPPDATA%\Etude）
+```
+
+**指针文件永远留在平台默认位置**，不跟着数据一起搬 ——
+它回答的就是「数据在哪」这个问题，跟着搬走等于把钥匙锁进要开的箱子。
+
+搬迁（`storage.py`）的两条硬规则：
+
+- **复制成功才写指针**。中途失败 = 什么都没发生，用户还在原来的位置。
+- **旧数据永不自动删除**。界面上明确说「确认新的能用之后再自己删」。
+
+还有一个容易写错的边界：**空白路径必须在 `resolve()` 之前挡住**。
+`Path("   ").resolve()` 会变成当前工作目录 ——
+也就是把「什么都没填」当成「搬到当前目录」。
 
 ---
 

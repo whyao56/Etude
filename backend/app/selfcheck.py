@@ -21,9 +21,11 @@ from . import __version__, config, db
 from .paths import (
     audio_dir,
     frontend_dir,
+    images_dir,
     is_frozen,
     log_dir,
     writable_root,
+    writable_root_source,
 )
 
 
@@ -166,13 +168,20 @@ def run(*, deep: bool = False) -> dict:
     except OSError as exc:
         items.append(_item("音频缓存", "fail", f"读不了：{exc}"))
 
-    # ⑧ 运行形态。这一条让「版本号对不上」在报告里一眼可辨。
+    # ⑧ 场景配图。**这一项最高只报 warn** —— 图片不是训练的必需品，
+    #    五条通道少了图照样能练。把它报成 fail 会让用户以为程序坏了。
+    items.append(_image_item(cfg))
+
+    # ⑨ 运行形态。这一条让「版本号对不上」在报告里一眼可辨。
+    #    顺带报数据目录的来源：用户改过存放位置之后，
+    #    「我的数据到底在哪、是谁定的」是最常被问的一件事。
     items.append(
         _item(
             "运行形态",
             "ok",
             f"{'打包版 exe' if is_frozen() else '源码运行'} · "
-            f"Python {sys.version.split()[0]} · Etude {__version__}",
+            f"Python {sys.version.split()[0]} · Etude {__version__} · "
+            f"数据目录来源：{_source_label(writable_root_source())}",
         )
     )
 
@@ -195,6 +204,59 @@ _WEBVIEW2_DIRS = (
     r"C:\Program Files (x86)\Microsoft\EdgeWebView\Application",
     r"C:\Program Files\Microsoft\EdgeWebView\Application",
 )
+
+
+def _source_label(source: str) -> str:
+    return {
+        "bootstrap": "设置里指定过（bootstrap.json）",
+        "ETUDE_DATA_DIR": "环境变量 ETUDE_DATA_DIR",
+        "default": "平台默认位置",
+    }.get(source, source)
+
+
+def _image_item(cfg: dict) -> dict:
+    """场景配图的配置和缓存。
+
+    **最高只报 warn。** 图片不是训练的必需品：五条通道少了图照样能练。
+    把它报成 fail 会把一个「能用但少了点东西」的状态说成「不能用」。
+    """
+    images_cfg = cfg.get("images", {})
+    source = (images_cfg.get("source") or "off").strip()
+
+    try:
+        count = len(list(images_dir().glob("*")))
+    except OSError as exc:
+        return _item("场景配图", "warn", f"读不了图片缓存：{exc}",
+                     "图片不是必需项，训练不受影响。")
+
+    if source == "off":
+        return _item("场景配图", "ok", f"已关闭 · 缓存里还有 {count} 张")
+
+    if source == "llm":
+        gen = images_cfg.get("llm") or {}
+        if not (gen.get("base_url") or "").strip() or not (gen.get("model") or "").strip():
+            return _item(
+                "场景配图",
+                "warn",
+                f"选了「用模型画图」但还没配好 · 缓存里 {count} 张",
+                "去「设置 → 场景配图」填 base_url 和模型名，"
+                "或者把来源改回「从开放图库检索」（免费、不需要配置）。",
+            )
+        if not (gen.get("api_key") or "").strip():
+            return _item(
+                "场景配图",
+                "warn",
+                f"{gen.get('base_url')} · {gen.get('model')} · 还没填密钥",
+                "画图要密钥。填上，或者改回「从开放图库检索」。",
+            )
+        return _item("场景配图", "ok", f"用模型画图 · {gen.get('model')} · 缓存 {count} 张")
+
+    return _item(
+        "场景配图",
+        "ok",
+        f"开放图库检索（无需密钥，需要联网）· 缓存 {count} 张",
+        "" if count else "还没有图，生成新包时会去检索。",
+    )
 
 
 def _window_status() -> tuple[str, str, str]:

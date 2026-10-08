@@ -164,6 +164,17 @@ def main() -> int:
                     "tts": {"engine": "openai", "openai": {
                         "base_url": args.llm_base, "api_key": "e2e",
                         "model": "tts-1", "voice": "alloy"}},
+                    # 场景配图**必须**在这里指明来源。默认是 search ——
+                    # 去开放图库联网检索。那会让这个检查依赖外网：断网、
+                    # 代理、图库抽风，症状都是「训练包一直停在生成中」，
+                    # 而失败原因看起来像生成的 bug，排查方向全错。
+                    # 指到假模型还顺带把「文生图」这条链路走了一遍。
+                    "images": {
+                        "source": "llm",
+                        "max_per_lesson": 8,
+                        "llm": {"base_url": args.llm_base, "api_key": "e2e",
+                                "model": "stub"},
+                    },
                 })
                 created = post_json(base + "/api/lessons", {"target": "appreciate"})
                 lesson_id = created["lesson_id"]
@@ -193,6 +204,22 @@ def main() -> int:
                         check(len(blob) > 0, "语音能真的取回来", f"{len(blob)} 字节")
                     except urllib.error.HTTPError as exc:
                         check(False, "语音能真的取回来", f"HTTP {exc.code}")
+
+                # 场景配图。这里断言的是**文件头**而不是「文件非空」：
+                # 图床出错时爱返回一个 200 + 一页 HTML，按后缀或按
+                # Content-Type 存下来就是一张永远加载不出来的假图，
+                # 而「非空」这个断言会一路放行。
+                pic = (lesson.get("examples") or [{}])[0].get("scene_image")
+                check(bool(pic), "第一条有场景配图")
+                if pic:
+                    try:
+                        with open_no_proxy(f"{base}/api/images/{pic}", timeout=30) as r:
+                            blob = r.read()
+                        head = blob[:4]
+                        check(head == b"\x89PNG", "配图取回来真的是图片",
+                              f"{len(blob)} 字节，头部 {head!r}")
+                    except urllib.error.HTTPError as exc:
+                        check(False, "配图取回来真的是图片", f"HTTP {exc.code}")
 
                 queue = get_json(base + "/api/queue?limit=40")
                 check(len(queue["cards"]) > 0, "复习队列里有卡",

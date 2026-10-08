@@ -47,6 +47,23 @@ DEFAULTS: dict[str, Any] = {
             "voice": "alloy",
         },
     },
+    "images": {
+        # 场景配图。off = 不用图片，search = 开放图库检索（免费、无需密钥），
+        # llm = 文生图模型画（要配置）。
+        #
+        # 默认给 search 而不是 off：它是免费的、不需要任何配置，
+        # 而「场景」是这个方法里最关键的一环 —— 让用户先去设置里
+        # 打开一个开关才能看到核心功能，是不合理的。
+        "source": "search",
+        # 一个训练包最多配几张图。0 = 每条例句都配。
+        "max_per_lesson": 8,
+        "llm": {
+            "preset": "zhipu",
+            "base_url": "https://open.bigmodel.cn/api/paas/v4",
+            "api_key": "",
+            "model": "cogview-3-flash",
+        },
+    },
     "study": {
         # 一次生成几个例句。理论要求「多例子重复」——不同例子的重复，
         # 而不是同一句重复，所以这个数不宜太小。
@@ -57,6 +74,8 @@ DEFAULTS: dict[str, Any] = {
         "zh_variant_policy": "rotate",  # rotate | fixed
         "new_per_day": 5,
         "scale": 100,  # 0-100，由它推出各通道的权重
+        # 新建学习计划时默认储备多少个（界面上还能改）。
+        "plan_default_count": 20,
     },
     "channels": {
         "read": True,
@@ -78,6 +97,10 @@ _ENV_OVERRIDES: dict[str, tuple[str, str]] = {
     "ETUDE_LLM_MODEL": ("llm", "model"),
     "ETUDE_TTS_ENGINE": ("tts", "engine"),
     "ETUDE_TTS_VOICE": ("tts", "voice"),
+    "ETUDE_IMAGE_SOURCE": ("images", "source"),
+    "ETUDE_IMAGE_BASE_URL": ("images", "llm", "base_url"),
+    "ETUDE_IMAGE_API_KEY": ("images", "llm", "api_key"),
+    "ETUDE_IMAGE_MODEL": ("images", "llm", "model"),
 }
 
 
@@ -107,10 +130,14 @@ def load() -> dict:
 
     merged = _deep_merge(DEFAULTS, data)
 
-    for env_name, (section, key) in _ENV_OVERRIDES.items():
+    for env_name, path in _ENV_OVERRIDES.items():
         value = os.environ.get(env_name)
-        if value:
-            merged.setdefault(section, {})[key] = value
+        if not value:
+            continue
+        node = merged
+        for key in path[:-1]:
+            node = node.setdefault(key, {})
+        node[path[-1]] = value
 
     return merged
 
@@ -141,6 +168,8 @@ def public_view(config: dict | None = None) -> dict:
     cfg = copy.deepcopy(config if config is not None else load())
     llm_key = cfg.get("llm", {}).pop("api_key", "") or ""
     tts_key = cfg.get("tts", {}).get("openai", {}).pop("api_key", "") or ""
+    img_key = cfg.get("images", {}).get("llm", {}).pop("api_key", "") or ""
     cfg["llm"]["api_key_set"] = bool(llm_key.strip())
     cfg["tts"]["openai"]["api_key_set"] = bool(tts_key.strip())
+    cfg["images"]["llm"]["api_key_set"] = bool(img_key.strip())
     return cfg

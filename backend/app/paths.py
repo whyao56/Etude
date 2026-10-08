@@ -3,18 +3,33 @@
 三条规则（经验来自上一个项目的教训：等打包时才发现程序目录只读，
 就得把「数据写哪」这条链路全部改一遍）：
 
-1. **可写的**进用户目录（``%LOCALAPPDATA%\\Etude``）；
+1. **可写的**进用户目录（默认 ``%LOCALAPPDATA%\\Etude``）；
 2. **只读的**进包内资源（``resource_dir()``）；
 3. **判断只在这一处做** —— 其它模块调 ``audio_dir()`` / ``db_path()``，
    永远不需要知道自己在源码态还是冻结态。
 
-关于备份：数据库开了 WAL，**单独 copy 主文件会丢掉还没落盘的那部分**。
+## 数据目录可以被搬走（0.0.2 新增）
+
+数据会长到几个 GB（音频 + 场景图片），而 C 盘常常是最紧的那个盘。
+所以允许把数据整个搬到别处，做法是**在一个永远不动的地方放一个指针**：
+
+    默认位置/bootstrap.json   →   {"data_dir": "D:/Etude/data"}
+
+读取顺序：``ETUDE_DATA_DIR`` 环境变量 → bootstrap.json → 平台默认位置。
+
+指针**必须留在默认位置**、不能跟着数据一起搬走 —— 否则程序就再也
+找不到数据在哪了。这是这个设计里唯一一条不能违反的约束。
+
+## 关于备份
+
+数据库开了 WAL，**单独 copy 主文件会丢掉还没落盘的那部分**。
 所以备份走 SQLite 自己的 ``VACUUM INTO``（见 ``db.backup_to``），
 而不是在这里提供「连边车文件一起 cp」的工具函数。
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -60,16 +75,73 @@ def frontend_dir() -> Path:
     return resource_dir() / "frontend"
 
 
-def writable_root() -> Path:
-    """可写数据根目录。打包后程序目录可能只读，所以数据一律不落在这里。"""
-    override = os.environ.get(DATA_DIR_ENV)
-    if override:
-        return Path(override).expanduser().resolve()
+def default_root() -> Path:
+    """平台默认的数据目录。**bootstrap.json 永远住在这里，不被搬走。**"""
     local = os.environ.get("LOCALAPPDATA")
     if local:
         return Path(local) / APP_NAME
     # 非 Windows 或环境变量缺失时的兜底。
     return Path.home() / f".{APP_NAME.lower()}"
+
+
+def bootstrap_path() -> Path:
+    return default_root() / "bootstrap.json"
+
+
+def read_bootstrap() -> dict:
+    """读指针文件。坏掉/不存在都当成「没有指针」，不抛异常。
+
+    配置坏掉不该让程序起不来 —— 起不来比「用默认位置」严重得多。
+    """
+    path = bootstrap_path()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def write_bootstrap(data_dir: str | None) -> Path:
+    """写指针文件。``None`` 表示恢复成平台默认位置。
+
+    先写临时文件再 ``os.replace``：中途崩溃不会留下半个 JSON，
+    否则下一次启动读到坏文件就会**静默退回默认目录**，
+    而用户以为自己的数据还在新位置上。
+    """
+    path = bootstrap_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"data_dir": str(data_dir)} if data_dir else {}
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+    return path
+
+
+def data_dir_override() -> str:
+    """指针文件里存的目标目录（空串表示没设过）。"""
+    value = read_bootstrap().get("data_dir")
+    return str(value) if value else ""
+
+
+def writable_root() -> Path:
+    """可写数据根目录。打包后程序目录可能只读，所以数据一律不落在这里。"""
+    override = os.environ.get(DATA_DIR_ENV)
+    if override:
+        return Path(override).expanduser().resolve()
+    pointed = data_dir_override()
+    if pointed:
+        return Path(pointed).expanduser().resolve()
+    return default_root()
+
+
+def writable_root_source() -> str:
+    """数据目录是**怎么**定下来的。界面要显示这个 —— 「我的数据到底在哪、
+    为什么会在这里」被打包后是最常被问的一件事。"""
+    if os.environ.get(DATA_DIR_ENV):
+        return DATA_DIR_ENV
+    if data_dir_override():
+        return "bootstrap"
+    return "default"
 
 
 def ensure_writable_root() -> Path:
@@ -88,8 +160,21 @@ def audio_dir() -> Path:
     return d
 
 
+def images_dir() -> Path:
+    """场景图片缓存。和音频一样按内容寻址，同一张图不会存两份。"""
+    d = writable_root() / "images"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def log_dir() -> Path:
     d = writable_root() / "logs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def backups_dir() -> Path:
+    d = writable_root() / "backups"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

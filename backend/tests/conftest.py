@@ -66,12 +66,56 @@ def stub_llm(monkeypatch):
     桩返回的是**完整**结构。要暴露「字段缺失时程序怎么办」，
     请用 tests/test_pipeline.py 里那些专门构造残缺结构的用例 ——
     「什么都能做」的桩会把问题盖住。
+
+    刻意**同时**认得两种请求：生成例句，和生成学习大纲。
+    只认前者的话，``/api/plans`` 会拿到一份例句 JSON，
+    然后报「模型返回里没有 outline 列表」—— 看起来像被测代码坏了，
+    其实是桩太窄。这种假线索最费时间。
     """
     import json
+    import re
 
     import app.providers.llm as llm_mod
 
+    def fake_syllabus(user: str) -> str:
+        m = re.search(r"Provide exactly (\d+) items", user)
+        count = int(m.group(1)) if m else 5
+        seeds = [
+            ("actually", "word", "A2", "把「其实」这一层意思说出来，不再只会说 really"),
+            ("be about to", "phrase", "B1", "说清楚「正要去做」，比 I will 精确"),
+            ("I'd rather ...", "sentence", "B1", "客气又有立场地说出自己更想要哪个"),
+            ("get used to", "phrase", "B2", "讲「习惯了」这件事"),
+            ("though", "word", "B1", "把补充和转折挂在句尾"),
+            ("What do you mean by ...?", "sentence", "B1", "听不懂时把话头接住"),
+        ]
+        payload = {
+            "note": "先从能立刻开口的功能词和固定说法开始，再往句型走。",
+            "outline": [
+                {
+                    "target": seeds[i % len(seeds)][0],
+                    "kind": seeds[i % len(seeds)][1],
+                    "domain": "日常口语",
+                    "band": seeds[i % len(seeds)][2],
+                    "why": seeds[i % len(seeds)][3],
+                }
+                for i in range(count)
+            ],
+        }
+        return json.dumps(payload, ensure_ascii=False)
+
     def fake_chat(**kwargs):
+        messages = kwargs.get("messages") or []
+        system = next(
+            (m.get("content", "") for m in messages if m.get("role") == "system"), ""
+        )
+        user = ""
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                user = m.get("content", "")
+                break
+        if "You design the SYLLABUS" in system:
+            return fake_syllabus(user)
+
         payload = {
             "kind": "word",
             "ipa": "əˈpriːʃieɪt",
@@ -138,7 +182,48 @@ def stub_tts_failing(monkeypatch):
 
 
 @pytest.fixture
-def client(isolated_data, sync_pool, stub_llm, stub_tts):
+def stub_image(monkeypatch):
+    """把场景配图换成桩，真的往 images 目录写一个文件。
+
+    两个理由，都很实际：
+
+    1. 和 ``stub_tts`` 同理 —— ``readiness`` 会去磁盘核对图片在不在，
+       只在内存里返回一个文件名的桩会把「其实没存下来」盖住。
+    2. 更快也更要紧：默认的配图来源是「从开放图库检索」，那是**真的联网**。
+       不桩的话，每个生成训练包的用例都会去敲 Openverse 的接口 ——
+       测试从此依赖外网，而且一次超时就能让整个测试套件挂住好几分钟。
+       这类「看着是绿的、其实在等网络」的测试比没有测试更糟。
+    """
+    import app.providers.images as images_mod
+    from app.paths import images_dir
+
+    def fake_provide(*, query="", prompt="", source="search", gen_cfg=None,
+                     timeout=40.0, force=False):
+        name = images_mod.cache_name(source or "search", query or prompt or "x", ".jpg")
+        (images_dir() / name).write_bytes(b"\xff\xd8\xff" + b"\x00" * 64)
+        return name
+
+    monkeypatch.setattr(images_mod, "provide", fake_provide)
+    return fake_provide
+
+
+@pytest.fixture
+def stub_image_failing(monkeypatch):
+    """配图**全部失败**的桩。
+
+    图片失败绝不能让一个包变成「生成失败」—— 五条通道少了图都还能练。
+    """
+    import app.providers.images as images_mod
+
+    def boom(**kwargs):
+        raise images_mod.ImageError("桩：没搜到合适的图。", "桩：换个关键词。")
+
+    monkeypatch.setattr(images_mod, "provide", boom)
+    return boom
+
+
+@pytest.fixture
+def client(isolated_data, sync_pool, stub_llm, stub_tts, stub_image):
     """跑得通全流程的测试客户端。"""
     from fastapi.testclient import TestClient
 
