@@ -18,58 +18,99 @@
     「评分按钮有 3 个是死的、却还显示手形光标」这件事。
 -->
 <style>
+/* ------------------------------------------------------------------ 配色
+
+   0.0.3 把整套颜色重写了一遍。起因是「界面颜色还是不够护眼美观」这条反馈，
+   拆开来看是三个具体毛病：
+
+   1. **纯蓝黑底 + 纯白字**。0.0.2 的深色是 #0b0d12 配 #e8ecf5，
+      对比度接近 16:1 —— 数字上很「清晰」，但连续盯半小时眼睛会累。
+      暗色界面的国际惯例是把对比压到 9~11:1，而不是拉到最大。
+   2. **所有颜色都偏蓝**。底色偏蓝、正文偏蓝、强调色也偏蓝，
+      整个界面像隔着一层冷玻璃。暖一点的底色对长时间阅读友好得多
+      （这也是各家电子书阅读器默认给米黄的原因）。
+   3. **只有一个浅色、一个深色**。实际上「护眼」和「清晰」是一对矛盾，
+      不同人、不同时段要的不一样，硬编死一个必然有人不满意。
+
+   所以现在给三套 + 跟随系统，默认落在**暖白**上：
+     warm（暖白 · 护眼，默认）／light（冷白 · 清晰）／dark（深色 · 夜间）
+   加上字号三档（见 html[data-size]），这几项都在「设置 → 界面」里。
+
+   所有颜色都从下面这组变量走。加新组件时**不要写死颜色** ——
+   写死一个 #fff，深色主题下就是一块白板。
+   ------------------------------------------------------------------ */
+
+/* 暖白 · 护眼（默认主题） */
 :root{
-  --bg:#0b0d12; --bg-2:#0f1219; --panel:#141822; --panel-2:#1b2030;
-  --panel-3:#212739;
-  --line:#242b3d; --line-2:#333c55;
-  --fg:#e8ecf5; --fg-dim:#9aa5bd; --fg-faint:#68738c;
-  --accent:#7aa2ff; --accent-2:#a78bfa; --accent-soft:#1c2743;
-  --ok:#3ddc97; --warn:#f0b849; --bad:#ff6b81;
-  --g0:#ff6b81; --g1:#f0b849; --g2:#7aa2ff; --g3:#3ddc97;
-  --radius:16px; --radius-sm:10px; --radius-xs:8px;
-  --shadow:0 1px 2px rgba(0,0,0,.5), 0 12px 32px -18px rgba(0,0,0,.9);
+  --bg:#ebe6dc; --bg-2:#e5dfd3; --panel:#f7f4ee; --panel-2:#f1ece3;
+  --panel-3:#e6e0d4;
+  --line:#dcd5c7; --line-2:#c9c1b0;
+  --fg:#33302a; --fg-dim:#6c6558; --fg-faint:#9a9184;
+  --accent:#3a6f61; --accent-2:#4f8a78; --accent-soft:#dfe9e2;
+  --ok:#3f7d4f; --warn:#96701c; --bad:#ab4438;
+  --g0:#ab4438; --g1:#96701c; --g2:#35688f; --g3:#3f7d4f;
+  --radius:15px; --radius-sm:10px; --radius-xs:8px;
+  --shadow:0 1px 2px rgba(70,60,40,.06), 0 12px 28px -20px rgba(70,60,40,.35);
   --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
   --sans:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
   --side:266px; --side-collapsed:62px;
+  --fs:15px; --lh:1.65; --stage-fs:31px;
 }
-@media (prefers-color-scheme: light){
+/* 跟随系统时，暗色系统落在深色主题上 */
+@media (prefers-color-scheme: dark){
   :root{
-    --bg:#f4f6fb; --bg-2:#eef1f7; --panel:#ffffff; --panel-2:#f4f6fb;
-    --panel-3:#eaeef7;
-    --line:#e3e8f2; --line-2:#ccd4e4;
-    --fg:#141a26; --fg-dim:#586279; --fg-faint:#8b94a8;
-    --accent:#3568dd; --accent-2:#7c5cf0; --accent-soft:#e6edfd;
-    --ok:#0f9768; --warn:#9c6d05; --bad:#d3384f;
-    --g0:#d3384f; --g1:#9c6d05; --g2:#3568dd; --g3:#0f9768;
-    --shadow:0 1px 2px rgba(16,24,40,.05), 0 14px 30px -20px rgba(16,24,40,.35);
+    --bg:#191a1c; --bg-2:#1e2023; --panel:#232528; --panel-2:#282a2e;
+    --panel-3:#2f3237;
+    --line:#34373c; --line-2:#464a51;
+    --fg:#ddd9d2; --fg-dim:#a19c93; --fg-faint:#78736c;
+    --accent:#69b8a2; --accent-2:#9b8ed6; --accent-soft:#22322e;
+    --ok:#5fbf8f; --warn:#d6ac5c; --bad:#e0837c;
+    --g0:#e0837c; --g1:#d6ac5c; --g2:#7fa8d8; --g3:#5fbf8f;
+    --shadow:0 1px 2px rgba(0,0,0,.45), 0 12px 30px -20px rgba(0,0,0,.85);
   }
 }
-html[data-theme="dark"]{
-  --bg:#0b0d12; --bg-2:#0f1219; --panel:#141822; --panel-2:#1b2030;
-  --panel-3:#212739;
-  --line:#242b3d; --line-2:#333c55;
-  --fg:#e8ecf5; --fg-dim:#9aa5bd; --fg-faint:#68738c;
-  --accent:#7aa2ff; --accent-2:#a78bfa; --accent-soft:#1c2743;
-  --ok:#3ddc97; --warn:#f0b849; --bad:#ff6b81;
-  --g0:#ff6b81; --g1:#f0b849; --g2:#7aa2ff; --g3:#3ddc97;
-  --shadow:0 1px 2px rgba(0,0,0,.5), 0 12px 32px -18px rgba(0,0,0,.9);
+html[data-theme="warm"]{
+  --bg:#ebe6dc; --bg-2:#e5dfd3; --panel:#f7f4ee; --panel-2:#f1ece3;
+  --panel-3:#e6e0d4;
+  --line:#dcd5c7; --line-2:#c9c1b0;
+  --fg:#33302a; --fg-dim:#6c6558; --fg-faint:#9a9184;
+  --accent:#3a6f61; --accent-2:#4f8a78; --accent-soft:#dfe9e2;
+  --ok:#3f7d4f; --warn:#96701c; --bad:#ab4438;
+  --g0:#ab4438; --g1:#96701c; --g2:#35688f; --g3:#3f7d4f;
+  --shadow:0 1px 2px rgba(70,60,40,.06), 0 12px 28px -20px rgba(70,60,40,.35);
 }
 html[data-theme="light"]{
-  --bg:#f4f6fb; --bg-2:#eef1f7; --panel:#ffffff; --panel-2:#f4f6fb;
-  --panel-3:#eaeef7;
-  --line:#e3e8f2; --line-2:#ccd4e4;
-  --fg:#141a26; --fg-dim:#586279; --fg-faint:#8b94a8;
-  --accent:#3568dd; --accent-2:#7c5cf0; --accent-soft:#e6edfd;
-  --ok:#0f9768; --warn:#9c6d05; --bad:#d3384f;
-  --g0:#d3384f; --g1:#9c6d05; --g2:#3568dd; --g3:#0f9768;
-  --shadow:0 1px 2px rgba(16,24,40,.05), 0 14px 30px -20px rgba(16,24,40,.35);
+  --bg:#f5f6f8; --bg-2:#eef0f4; --panel:#ffffff; --panel-2:#f5f6f8;
+  --panel-3:#eceef3;
+  --line:#e4e7ee; --line-2:#ced3de;
+  --fg:#1d2129; --fg-dim:#5a6273; --fg-faint:#8b93a4;
+  --accent:#2f5f8f; --accent-2:#5a7fc0; --accent-soft:#e4ecf6;
+  --ok:#187a5a; --warn:#8f6a10; --bad:#bf3b4c;
+  --g0:#bf3b4c; --g1:#8f6a10; --g2:#2f5f8f; --g3:#187a5a;
+  --shadow:0 1px 2px rgba(16,24,40,.05), 0 14px 30px -20px rgba(16,24,40,.3);
 }
+html[data-theme="dark"]{
+  --bg:#191a1c; --bg-2:#1e2023; --panel:#232528; --panel-2:#282a2e;
+  --panel-3:#2f3237;
+  --line:#34373c; --line-2:#464a51;
+  --fg:#ddd9d2; --fg-dim:#a19c93; --fg-faint:#78736c;
+  --accent:#69b8a2; --accent-2:#9b8ed6; --accent-soft:#22322e;
+  --ok:#5fbf8f; --warn:#d6ac5c; --bad:#e0837c;
+  --g0:#e0837c; --g1:#d6ac5c; --g2:#7fa8d8; --g3:#5fbf8f;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 12px 30px -20px rgba(0,0,0,.85);
+}
+
+/* 阅读字号三档。护眼这件事里，字号和对比度一样要紧 ——
+   把字放大一点往往比把背景调暗更管用。 */
+html[data-size="s"]{--fs:14px; --lh:1.6;  --stage-fs:27px}
+html[data-size="m"]{--fs:15px; --lh:1.65; --stage-fs:31px}
+html[data-size="l"]{--fs:16.5px; --lh:1.78; --stage-fs:36px}
 
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
   margin:0;background:var(--bg);color:var(--fg);
-  font-family:var(--sans);font-size:15px;line-height:1.62;
+  font-family:var(--sans);font-size:var(--fs);line-height:var(--lh);
   -webkit-font-smoothing:antialiased;
 }
 button,input,select,textarea{font:inherit;color:inherit}
@@ -140,43 +181,78 @@ a{color:var(--accent)}
 .side.collapsed .panel-title{display:none}
 .side.collapsed .panel{padding:8px 5px;background:transparent;border-color:transparent}
 
-/* 侧边栏里的评分键。竖排 —— 每一档都要写清「按下去会推到什么时候」，
-   横排四个在 266px 里挤不下。 */
-.grades{display:flex;flex-direction:column;gap:6px}
+/* --------------------------------------------------------- 评分键（训练页）
+
+   0.0.2 把它们放进了侧边栏，理由是「卡片一长就得往下翻才能评分」。
+   用过之后发现代价更大：评分是**练完一张就做一次**的动作，
+   它的位置必须跟着卡片走，放在固定栏里就变成了「眼睛在卡片上、
+   手要去屏幕另一头」。而且 266px 的宽度塞不下「标签 + 下次间隔」两行，
+   于是只能显示成「先核对答案」，看起来就像坏了。
+
+   现在放回训练页、卡片正下方，**横排四档**：
+   每一档都同时显示三件事 —— 快捷键数字、中文档位、按下去会推到什么时候。
+   这样一眼就能看出「吃力」和「正常」差多少天，而这正是评分时唯一要判断的东西。
+   ---------------------------------------------------------------------- */
+.grader{
+  display:flex;flex-direction:column;gap:10px;
+  border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--panel);padding:12px;
+  box-shadow:var(--shadow);
+}
+.grades{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+@media (max-width:720px){ .grades{grid-template-columns:repeat(2,1fr)} }
+
 .grade{
-  display:flex;align-items:center;gap:9px;width:100%;
-  padding:8px 10px;border-radius:var(--radius-xs);
-  border:1px solid var(--line);background:var(--panel);
-  text-align:left;transition:border-color .13s,background .13s,transform .08s;
+  display:flex;flex-direction:column;align-items:flex-start;gap:3px;
+  padding:10px 12px;border-radius:var(--radius-sm);
+  border:1px solid var(--line);background:var(--panel-2);
+  text-align:left;min-width:0;width:100%;
+  transition:border-color .13s,background .13s,transform .08s;
 }
-.grade:hover{border-color:color-mix(in srgb,var(--gc) 60%,var(--line));
-             background:color-mix(in srgb,var(--gc) 8%,var(--panel))}
-.grade:active{transform:scale(.985)}
+.grade:hover{border-color:color-mix(in srgb,var(--gc) 62%,var(--line));
+             background:color-mix(in srgb,var(--gc) 10%,var(--panel))}
+.grade:active{transform:translateY(1px)}
+.grade .top{display:flex;align-items:center;gap:7px;width:100%;min-width:0}
 .grade .num{
-  flex:0 0 auto;width:20px;height:20px;border-radius:6px;
-  display:grid;place-items:center;font-family:var(--mono);font-size:11.5px;
-  color:var(--gc);background:color-mix(in srgb,var(--gc) 16%,transparent);
-  border:1px solid color-mix(in srgb,var(--gc) 38%,transparent);
+  flex:0 0 auto;width:19px;height:19px;border-radius:6px;
+  display:grid;place-items:center;font-family:var(--mono);font-size:11px;
+  color:var(--gc);background:color-mix(in srgb,var(--gc) 15%,transparent);
+  border:1px solid color-mix(in srgb,var(--gc) 36%,transparent);
 }
-.grade .txt{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.28}
-.grade .txt b{font-size:13px;font-weight:600}
-.grade .txt span{font-size:11px;color:var(--fg-faint);font-family:var(--mono)}
+.grade b{font-size:13.5px;font-weight:600;white-space:nowrap}
+.grade .when{
+  font-size:11.5px;color:var(--fg-faint);font-family:var(--mono);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
+}
+.grade .need{
+  font-size:10.5px;color:var(--fg-faint);
+  border:1px solid var(--line);border-radius:20px;padding:0 6px;
+  margin-left:auto;white-space:nowrap;
+}
+
+/* 四档各自的颜色。**四档都是活的**，所以没有任何一档长得像禁用 ——
+   0.0.2 那个「按不动」的 bug 就是因为待用状态被画成了灰掉的样子。
+   现在「还没翻面」只体现为右上角一个「先看答案」的小标签，
+   边框、颜色、光标全部和可点状态一致。 */
 .grade[data-g="0"]{--gc:var(--g0)}
 .grade[data-g="1"]{--gc:var(--g1)}
 .grade[data-g="2"]{--gc:var(--g2)}
 .grade[data-g="3"]{--gc:var(--g3)}
-/* 翻面前这 3 档还没到能用的时候。**做成虚线而不是半透明** ——
-   半透明按钮看起来只是「有点淡」，加上手形光标就成了「点了没反应」，
-   正是 0.0.2 要修的那个 bug。虚线边框表达的是「还没到这一步」。 */
-.grade[data-pending="1"]{border-style:dashed;border-color:var(--line-2);background:transparent}
-.grade[data-pending="1"] .num{color:var(--fg-faint);background:transparent;
-                               border-color:var(--line-2)}
-.grade[data-pending="1"] .txt b{color:var(--fg-dim);font-weight:500}
-.grade[data-pending="1"]:hover{border-color:var(--accent);
-                               background:color-mix(in srgb,var(--accent) 8%,transparent)}
-.side.collapsed .grade{justify-content:center;padding:6px 4px}
-.side.collapsed .grade .txt{display:none}
-.side.collapsed .grade .num{width:26px;height:26px;font-size:12px}
+.grade.is-pending{background:color-mix(in srgb,var(--panel-2) 72%,transparent)}
+.grade.is-pending .when{opacity:.55}
+.grade.is-pending:hover{background:color-mix(in srgb,var(--gc) 10%,var(--panel))}
+.grade.is-last{border-color:color-mix(in srgb,var(--gc) 70%,var(--line));
+               box-shadow:0 0 0 1px color-mix(in srgb,var(--gc) 32%,transparent)}
+
+.grader-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.grader-foot .spacer{flex:1}
+.grader-foot .note{font-size:12px;color:var(--fg-dim);max-width:56ch}
+
+/* 侧边栏里只留「本次进度」这种不跟着卡片走的东西。 */
+.tally{display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--fg-dim)}
+.tally div{display:flex;justify-content:space-between;gap:10px}
+.tally b{color:var(--fg);font-family:var(--mono);font-weight:600}
+.side.collapsed .tally{display:none}
 
 .hotkeys{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--fg-dim)}
 .hotkeys div{display:flex;align-items:center;gap:7px}
@@ -360,7 +436,7 @@ table.self td:first-child{white-space:nowrap;color:var(--fg-dim);padding-right:1
   background:color-mix(in srgb,var(--accent) 9%,transparent);
   padding:3px 11px;border-radius:20px;
 }
-.stage .prompt-en{font-size:31px;line-height:1.42;font-weight:500;letter-spacing:.1px;max-width:680px}
+.stage .prompt-en{font-size:var(--stage-fs);line-height:1.42;font-weight:500;letter-spacing:.1px;max-width:680px}
 .stage .prompt-scene{font-size:19px;line-height:1.7;max-width:640px;color:var(--fg)}
 .stage .task{color:var(--fg-dim);font-size:13.5px;max-width:600px}
 .stage hr{width:64%;border:none;border-top:1px solid var(--line);margin:2px 0}
@@ -477,6 +553,111 @@ table.self td:first-child{white-space:nowrap;color:var(--fg-dim);padding-right:1
 .kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px;font-size:12.5px;margin:0}
 .kv dt{color:var(--fg-faint);white-space:nowrap}
 .kv dd{margin:0;color:var(--fg-dim);word-break:break-all;font-family:var(--mono)}
+
+/* ------------------------------------------------------- 卡片浏览器 */
+
+.filters{
+  display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;
+  border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:var(--panel);padding:12px;margin-bottom:12px;
+}
+.filters label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--fg-faint)}
+.filters select,.filters input{padding:6px 9px;font-size:13px;border-radius:var(--radius-xs)}
+.filters select{min-width:120px}
+.filters .grow{flex:1;min-width:150px}
+
+table.browser{width:100%;border-collapse:collapse;font-size:13px}
+table.browser th{
+  text-align:left;font-size:11px;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--fg-faint);font-weight:600;padding:6px 8px;
+  border-bottom:1px solid var(--line);white-space:nowrap;
+}
+table.browser td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.browser tr:last-child td{border-bottom:none}
+table.browser tr:hover td{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+table.browser td.sent{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.browser td.num{font-family:var(--mono);font-size:12px;color:var(--fg-dim);white-space:nowrap}
+/* 暂停的行整体降一档对比：**不是隐藏**。藏起来的话用户会以为卡丢了。 */
+table.browser tr.off td{opacity:.5}
+table.browser tr.picked td{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.rowacts{display:flex;gap:3px;justify-content:flex-end;flex-wrap:wrap}
+.rowacts button{
+  font-size:11.5px;padding:2px 8px;border-radius:20px;
+  border:1px solid var(--line);color:var(--fg-dim);
+}
+.rowacts button:hover{border-color:var(--accent);color:var(--fg)}
+.mini{
+  font-family:var(--mono);font-size:10.5px;padding:1px 6px;border-radius:20px;
+  border:1px solid var(--line);color:var(--fg-faint);white-space:nowrap;
+}
+.mini.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}
+.mini.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
+.mini.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,var(--line))}
+
+.bulkbar{
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));
+  background:var(--accent-soft);border-radius:var(--radius-sm);
+  padding:9px 12px;margin-bottom:10px;font-size:13px;
+}
+
+/* ------------------------------------------------ 卡片编辑器（抽屉） */
+
+.drawer-wrap{
+  position:fixed;inset:0;z-index:60;display:flex;justify-content:flex-end;
+  background:rgba(20,18,14,.42);backdrop-filter:blur(2px);
+}
+.drawer{
+  width:min(560px,100%);height:100%;overflow:auto;
+  background:var(--panel);border-left:1px solid var(--line);
+  padding:18px 20px 90px;box-shadow:var(--shadow);
+  animation:slide .18s ease both;
+}
+@keyframes slide{from{transform:translateX(18px);opacity:.6}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion: reduce){ .drawer{animation:none} }
+.drawer-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:14px}
+.drawer-head h2{margin:0;font-size:17px}
+.drawer-head .sub{font-size:12px;color:var(--fg-dim);margin-top:3px}
+.drawer-foot{
+  position:sticky;bottom:-90px;margin-top:16px;padding:12px 0 0;
+  border-top:1px solid var(--line);background:var(--panel);
+  display:flex;gap:8px;flex-wrap:wrap;
+}
+.subcard{
+  border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:var(--panel-2);padding:12px;margin-bottom:12px;
+}
+.subcard > h3{
+  margin:0 0 10px;font-size:12px;letter-spacing:1.1px;text-transform:uppercase;
+  color:var(--fg-faint);font-weight:600;
+}
+.media-row{display:flex;gap:12px;align-items:flex-start}
+.media-row img{
+  width:120px;height:84px;object-fit:cover;border-radius:9px;
+  border:1px solid var(--line);background:var(--panel-3);flex:0 0 auto;
+}
+.varlist{display:flex;flex-direction:column;gap:6px}
+.varrow{display:flex;gap:6px;align-items:center}
+.varrow input{flex:1;min-width:0}
+
+.switch{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--fg-dim)}
+.switch input{width:auto;accent-color:var(--accent)}
+
+/* 设置页的选项网格：主题 / 字号 / 密度 */
+.optgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px}
+.optcard{
+  border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:var(--panel-2);padding:10px 12px;text-align:left;
+}
+.optcard:hover{border-color:var(--line-2)}
+.optcard[aria-pressed="true"]{
+  border-color:color-mix(in srgb,var(--accent) 55%,var(--line));
+  background:var(--accent-soft);
+}
+.optcard b{display:block;font-size:13.5px;font-weight:600}
+.optcard span{display:block;font-size:11.5px;color:var(--fg-dim);margin-top:2px}
+.swatches{display:flex;gap:4px;margin-top:7px}
+.swatches i{width:15px;height:15px;border-radius:4px;border:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -490,13 +671,14 @@ table.self td:first-child{white-space:nowrap;color:var(--fg-dim);padding-right:1
 
     <nav class="side-nav" id="nav">
       <button data-view="study"><span class="ico" data-icon="study"></span><span class="label">训练</span><span class="count" id="nav-due"></span></button>
+      <button data-view="cards"><span class="ico" data-icon="cards"></span><span class="label">卡片</span><span class="count" id="nav-cards"></span></button>
       <button data-view="lessons"><span class="ico" data-icon="lessons"></span><span class="label">训练包</span><span class="count" id="nav-lessons"></span></button>
       <button data-view="plans"><span class="ico" data-icon="plans"></span><span class="label">目标</span><span class="count" id="nav-plans"></span></button>
       <button data-view="settings"><span class="ico" data-icon="settings"></span><span class="label">设置</span></button>
     </nav>
 
-    <!-- 交互键都收在这里。0.0.2 之前它们散在页面底部，
-         卡片一长就得往下翻才能评分。 -->
+    <!-- 0.0.2 把交互键放进了这里；0.0.3 又把评分键拿回训练页（见 .grader 的注释）。
+         这里现在只留**不跟着卡片走**的东西：导航、本次进度、快捷键表。 -->
     <div id="side-actions"></div>
 
     <div class="side-foot">
@@ -517,7 +699,7 @@ table.self td:first-child{white-space:nowrap;color:var(--fg-dim);padding-right:1
 // 必须和后端 app/__init__.py 里的 __version__ 一致。
 // 有测试盯着这一条 —— 否则这行常量会变成天天误报的噪音，
 // 用户很快学会无视它，那还不如没有。
-const APP_VERSION = "0.0.2";
+const APP_VERSION = "0.0.3";
 
 // ----------------------------------------------------------------- 工具
 
@@ -529,6 +711,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 // 而且在一个严肃的训练工具里显得吵。
 const ICONS = {
   study:    "M12 3a9 9 0 100 18 9 9 0 000-18z M12 8a4 4 0 100 8 4 4 0 000-8z",
+  cards:    "M4 7h16v3H4z M4 14h16v3H4z",
   lessons:  "M12 3l9 5-9 5-9-5 9-5z M3 13l9 5 9-5 M3 17l9 5 9-5",
   plans:    "M5 21V4 M5 4h12l-1.6 4L17 12H5",
   settings: "M12 9a3 3 0 100 6 3 3 0 000-6z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M19.1 4.9L17 7 M7 17l-2.1 2.1",
@@ -678,11 +861,28 @@ const state = {
   variantIndex: 0,
   busy: false,
   sessionDone: 0,
+  skipped: 0,
+  // 刚评完的那一档（0–3），用来在评分区把那一档标出来。
+  lastGrade: null,
   stats: null,
   // 侧边栏收起来的状态。存 localStorage，重开还是收着的。
   sideCollapsed: false,
   // 翻面前点了「吃力/正常/秒答」时给一句提醒，免得用户以为没反应。
   gradeNote: "",
+  // 本次会话里已经评过的卡（按顺序）。「上一张」和「撤销」都要用它 ——
+  // 撤销必须知道「刚才退回去的是哪一张」，而队列里的 cursor 可能
+  // 因为跳过而和评分历史对不上。
+  history: [],
+  // 卡片编辑器抽屉里正在编辑的东西。null = 抽屉关着。
+  editing: null,
+  // 卡片浏览器的筛选条件与多选集合。
+  browser: { lesson_id: 0, channel: "", state: "all", q: "", picked: [] },
+  // 「界面密度」。简易只给必需的东西，进阶把 SRS 数字、卡片 id、
+  // 到期时间这些摊开 —— 新手和老手要的是两个不同的界面，
+  // 而这件事不该由程序替用户决定。
+  density: "simple",
+  theme: "auto",
+  fontSize: "m",
 };
 
 function setBanner(level, html) {
@@ -692,13 +892,36 @@ function setBanner(level, html) {
   if (level && html) banner.appendChild(typeof html === "string" ? document.createTextNode(html) : html);
 }
 
-const VIEWS = ["study", "lessons", "plans", "settings"];
-const VIEW_LABEL = { study: "训练", lessons: "训练包", plans: "目标", settings: "设置" };
+const VIEWS = ["study", "cards", "lessons", "plans", "settings"];
+const VIEW_LABEL = {
+  study: "训练", cards: "卡片", lessons: "训练包", plans: "目标", settings: "设置",
+};
+
+// 「进阶」模式下才出现的那些数字和开关。
+// 用一个函数而不是到处写 if —— 密度这个设定将来还会管到别的地方，
+// 到那时只有一个地方要改。
+function isAdvanced() { return state.density === "advanced"; }
 
 function setView(view) {
   if (VIEWS.indexOf(view) < 0) view = "study";
   state.view = view;
   if (view !== "plans") state.openPlan = null;
+  // openLesson 是**无条件**清掉的，这点和 openPlan 不一样。
+  //
+  // 因为它代表的是「我现在停在某个包的详情页里」，而 setView 是
+  // 「请带我去某一页」——点侧边栏的「训练包」，意思就是**回到列表**。
+  // 不清的话，renderLessons 会照着它把详情页重画出来，
+  // 用户进了详情页之后就再也退不回列表了。
+  //
+  // 想留在详情页的那些路径（关抽屉、换配色、补语音）都不走 setView，
+  // 直接走 render()，所以它们不受影响。
+  state.openLesson = null;
+  // 抽屉是挂在 body 上的，切页时它会留在原地盖住新页面。
+  // 这里主动关掉 —— 不留一个「切了页还浮着的面板」。
+  if (state.editing) closeEditor();
+  // 训练包清单每次进「卡片」页都要重取：刚生成完一个包，
+  // 缓存的清单里没有它，下拉框就少一个选项。
+  if (view === "cards") state.lessonList = null;
   // 地址栏跟着走：刷新后还停在同一页，也能被直接链接过来。
   // 在这里改 hash 会触发 hashchange，靠下面那个比对把重复渲染挡掉。
   if (location.hash.slice(1) !== view) location.hash = view;
@@ -761,6 +984,14 @@ function imagePath(name) {
   return "/api/images/" + encodeURIComponent(name);
 }
 
+// 场景图的 src。**允许是一个外部地址** —— 编辑器里可以手动贴图床链接，
+// 那种值不该再过一遍 /api/images（那个接口只认自己生成的文件名）。
+// 不区分的话，用户贴的地址会被拼成 /api/images/https%3A%2F%2F... 然后 400。
+function imageSrc(value) {
+  if (!value) return "";
+  return /^https?:\/\//i.test(value) ? value : imagePath(value);
+}
+
 let currentAudio = null;
 function playAudio(name) {
   if (!name) return false;
@@ -770,12 +1001,95 @@ function playAudio(name) {
   return true;
 }
 
+// ------------------------------------------------------------ 朗读兜底
+
+// 「例句读不出来」有两条完全不同的成因，用户在界面上看到的现象却一样：
+//
+//   A. **服务端没合出音频**。0.0.3 修掉的那个音色 bug 就属于这一类 ——
+//      切到「大模型语音」后发出去的是 Edge 的音色名，每条都失败，
+//      而失败只写进日志，界面上是一整包静音。
+//   B. 音频在，但这条卡就是还没有（刚手工加的例句、生成中途关了程序）。
+//
+// A 已经在后端修掉了，但**只要还有任何一种成因能让句子没声音，
+// 界面上就不能只剩一个转不动的按钮**。所以这里补一条不依赖后端的出路：
+// 浏览器自带的语音合成。它用的是操作系统里的语音包，不需要网络、
+// 不需要密钥、不会失败 —— 音质不如 Edge，但「读得出来」这件事它一定能做到。
+//
+// 有服务端音频时仍然优先用它：那是训练素材的一部分（真人音色），
+// 系统语音只是保底。
+let currentSpeech = null;
+
+function langTag() {
+  const code = (state.current && state.current.lesson && state.current.lesson.language) || "en";
+  const list = (state.catalog && state.catalog.languages) || [];
+  const hit = list.filter((l) => l.id === code)[0];
+  return (hit && hit.speech) || "en-US";
+}
+
+function speakSupported() {
+  return typeof window !== "undefined" && !!window.speechSynthesis;
+}
+
+function speakText(text) {
+  if (!text || !speakSupported()) return false;
+  try { window.speechSynthesis.cancel(); } catch (e) { /* 忽略 */ }
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = langTag();
+  utter.rate = 0.95;
+  // 存一份引用：某些浏览器上不持有引用的话，语音对象会被回收掉，
+  // 表现就是「第一句能读，后面全都不出声」。
+  currentSpeech = utter;
+  try { window.speechSynthesis.speak(utter); } catch (e) { return false; }
+  return true;
+}
+
+// 统一的「把这句话念出来」。界面上所有播放按钮都走这里，
+// 于是不可能再出现「有的卡能听、有的卡点了没反应」。
+//
+// 返回值说明用了哪条路，好让界面把这件事写出来：
+//   "file"  —— 服务端音频（训练素材，优先）
+//   "speech" —— 系统语音（兜底）
+//   ""      —— 两条路都不行
+function playSentence(ex) {
+  if (ex && ex.audio_path) {
+    playAudio(ex.audio_path);
+    return "file";
+  }
+  if (ex && ex.sentence && speakText(ex.sentence)) return "speech";
+  return "";
+}
+
+// 播放按钮。带一句话说明它用的是哪条路 ——
+// 「点了有声音」和「点了有声音但好像不太一样」是两种体验，
+// 后者如果不解释，用户会以为程序坏了。
+function playButton(ex, { small = true, label = "" } = {}) {
+  const hasFile = !!(ex && ex.audio_path);
+  const canSpeak = !hasFile && !!(ex && ex.sentence) && speakSupported();
+  if (!hasFile && !canSpeak) return null;
+
+  const node = el("button", {
+    class: "playbtn" + (small ? " small" : ""),
+    title: hasFile ? "听一遍（生成的语音）" : "用系统语音朗读（这条还没有生成音频）",
+    onClick: () => playSentence(ex),
+  });
+  node.appendChild(icon("play", small ? 16 : 30));
+  if (!label) return node;
+
+  return el("div", { class: "row", style: "gap:8px" }, [
+    node,
+    el("span", {
+      class: "faint",
+      text: hasFile ? label : label + " · 系统语音（没生成音频时的兜底）",
+    }),
+  ]);
+}
+
 // 场景配图。**文件不在了要能自己退回去** —— 数据目录被搬过、
 // 或者某次生成失败，都会留一个空的 <img>，看起来就是「破了」。
 function sceneImage(ex, capText) {
   if (!ex || !ex.scene_image) return null;
   const img = el("img", {
-    class: "sceneimg", src: imagePath(ex.scene_image), alt: "场景配图",
+    class: "sceneimg", src: imageSrc(ex.scene_image), alt: "场景配图",
     loading: "lazy", referrerpolicy: "no-referrer",
   });
   const wrap = el("div", { class: "imgwrap" }, [img]);
@@ -801,6 +1115,7 @@ function renderStudy(main) {
     wrap.appendChild(el("div", { class: "row" }, [
       btn("去生成训练包", { class: "btn primary", onClick: () => setView("lessons") }, "plus"),
       btn("去设学习目标", { class: "btn", onClick: () => setView("plans") }, "plans"),
+      btn("看全部卡片", { class: "btn", onClick: () => setView("cards") }, "cards"),
       btn("刷新队列", { class: "btn ghost", onClick: loadQueue }, "refresh"),
     ]));
     main.appendChild(wrap);
@@ -822,18 +1137,28 @@ function renderStudy(main) {
     wrap.appendChild(el("div", { class: "stage" }, [
       el("div", { class: "chan", text: "本轮结束" }),
       el("div", { class: "answer", text: "练完了 " + state.sessionDone + " 张卡。" }),
+      state.skipped
+        ? el("div", { class: "task", text: "跳过了 " + state.skipped + " 张（跳过不计入进度，它们还在队列里）。" })
+        : null,
       el("div", {
         class: "task",
         text: "理论要的是「不同例子的重复」——明天再来，遇到的是新的例子，不是今天这几句。",
       }),
     ]));
-    wrap.appendChild(el("div", { class: "row" }, [
+    const row = el("div", { class: "row" }, [
       btn("刷新队列", {
         class: "btn primary",
-        onClick: () => { state.cursor = 0; state.sessionDone = 0; loadQueue(); },
+        onClick: () => { loadQueue(); },
       }, "refresh"),
       btn("回训练包", { class: "btn", onClick: () => setView("lessons") }),
-    ]));
+    ]);
+    // 评错了要能退。这是「Anki 式」里最不起眼但最要紧的一条 ——
+    // 没有撤销的话，一次手滑会污染几周的复习计划。
+    if (state.history.length) {
+      row.appendChild(btn("撤销最后一条评分", { class: "btn ghost", onClick: undoLastGrade }));
+      row.appendChild(el("span", { class: "faint", text: "键盘 Z 也行。" }));
+    }
+    wrap.appendChild(row);
     main.appendChild(wrap);
     return;
   }
@@ -866,14 +1191,188 @@ function renderStudy(main) {
   else buildBuild(stage, data);
 
   wrap.appendChild(stage);
-  wrap.appendChild(el("div", {
-    class: "centernote",
-    text: state.revealed
-      ? "左边的评分键现在四档都能用了 —— 键盘 1–4 也行。"
-      : "左边现在可以直接评「没想起来」；评其他三档会先让你核对答案。",
-  }));
+  wrap.appendChild(grader(data));
 
   main.appendChild(wrap);
+}
+
+// --------------------------------------------------------------- 评分区
+
+// 卡片正下方的评分区。四档 + 一排导航键。
+//
+// 这里是「评分键显示有点问题」那条反馈的落点。原来看起来别扭的地方有三个，
+// 逐个说一下现在是怎么办的：
+//
+// 1. **待用状态被画成了「坏掉」**。0.0.2 用虚线边框 + 灰色字表示
+//    「翻面之后才能评」，但用户看到的是一排发灰的按钮 —— 和「禁用」
+//    没有区别。现在四档**长得完全一样**，区别只在右上角多一个
+//    「先看答案」的小标签，字号很小、不抢注意力，但找得到。
+// 2. **下次间隔被那句话顶掉了**。「先核对答案」原来占着本该显示
+//    「→ 3 天」的位置，于是翻面前根本看不出各档差多少 ——
+//    而这恰好是选择评分时唯一需要的信息。现在两个都显示：
+//    间隔一直显示，只是待用时压暗一档。
+// 3. **竖排在 266px 里挤**。横排四列之后每一档能写全
+//    「数字 + 档位 + 间隔」三样东西。
+function grader(data) {
+  const preview = data.srs_preview || {};
+  const box = el("div", { class: "grader" });
+
+  const grid = el("div", { class: "grades" });
+  for (const g of [0, 1, 2, 3]) {
+    const info = preview[g] || preview[String(g)] || {};
+    // 0（没想起来）不需要先看答案 —— 没想起来就是没想起来。
+    const pending = !state.revealed && g !== 0;
+    const last = state.lastGrade === g;
+    grid.appendChild(el("button", {
+      class: "grade" + (pending ? " is-pending" : "") + (last ? " is-last" : ""),
+      "data-g": String(g),
+      title: pending
+        ? "点一下会先把答案翻出来，核对之后再点一次就评上了"
+        : (info.human ? "按下去下次复习：" + info.human : "按下去会排下次复习时间"),
+      onClick: () => grade(g),
+    }, [
+      el("span", { class: "top" }, [
+        el("span", { class: "num", text: String(g + 1) }),
+        el("b", { text: info.label || GRADE_LABEL[g] }),
+        pending ? el("span", { class: "need", text: "先看答案" }) : null,
+      ]),
+      el("span", {
+        class: "when",
+        text: info.human ? "→ " + info.human : "→ —",
+      }),
+    ]));
+  }
+  box.appendChild(grid);
+
+  // 翻了面、但还没评，就把「先看答案」是什么意思说明白。
+  if (state.gradeNote) {
+    box.appendChild(el("div", { class: "hint", text: state.gradeNote }));
+  } else if (!state.revealed) {
+    box.appendChild(el("div", {
+      class: "hint",
+      text: "「没想起来」现在就能直接评。其余三档会先把答案翻出来，"
+          + "核对之后再点一次 —— 因为「吃力 / 正常 / 秒答」是看过答案才能下的判断。",
+    }));
+  }
+
+  box.appendChild(graderFoot());
+  return box;
+}
+
+function graderFoot() {
+  const row = el("div", { class: "grader-foot" });
+
+  // 这几个按钮都带 id。原因很实际：冒烟检查要用**真实鼠标**点到它们，
+  // 而按「第几个按钮」找元素会随分支（有没有翻面）而变 ——
+  // 那种选择器总有一天会点到隔壁那个按钮上，而且不报错。
+  const back = btn("上一张", {
+    class: "btn sm", id: "grade-prev", onClick: prevCard,
+  }, "left");
+  back.disabled = state.cursor <= 0;
+  back.title = back.disabled ? "已经在队列最前面了" : "回看上一张（不影响已评的结果）";
+  row.appendChild(back);
+
+  if (!state.revealed) {
+    row.appendChild(btn("翻面看答案", {
+      class: "btn primary sm", id: "grade-reveal", onClick: reveal,
+    }, "book"));
+  } else {
+    row.appendChild(el("span", {
+      class: "faint", style: "font-size:12.5px",
+      text: "凭刚才回想起来的难易程度评。",
+    }));
+  }
+
+  const last = state.history.length ? state.history[state.history.length - 1] : null;
+  const undo = btn("撤销上一评", {
+    class: "btn sm", id: "grade-undo", onClick: undoLastGrade,
+  }, "refresh");
+  undo.disabled = !last;
+  undo.title = last
+    ? "退掉刚才给「" + (last.sentence || "").slice(0, 18) + "」的评分，并把这张卡放回队列"
+    : "这个会话里还没有评过分";
+  row.appendChild(undo);
+
+  row.appendChild(el("span", { class: "spacer" }));
+
+  row.appendChild(btn("下一张", { class: "btn sm", id: "grade-next", onClick: nextCard }, "right"));
+
+  if (state.current && state.current.example) {
+    row.appendChild(btn("编辑这条", {
+      class: "btn sm ghost", id: "grade-edit", onClick: () => openEditor(state.current),
+    }, "wand"));
+  }
+
+  return row;
+}
+
+// ------------------------------------------------------- 上一张 / 下一张
+
+// 「上一张」只回看，**不动数据**。
+//
+// 这是刻意的：如果「上一张」顺手把刚才的评分撤了，那用户想看一眼前一句
+// 再回来时，会发现自己把进度改了。要改数据必须明说 —— 那是「撤销」。
+function prevCard() {
+  if (state.cursor <= 0) return;
+  state.cursor--;
+  state.current = null;
+  state.revealed = false;
+  state.typed = "";
+  state.typedResult = null;
+  state.gradeNote = "";
+  state.lastGrade = null;
+  render();
+  fetchCard(state.queue[state.cursor].id);
+}
+
+// 「下一张」= 跳过。**不评分、不计入已练**。
+//
+// 跳过是必要的出口：遇到一条自己完全不想练的句子时，逼着人评分
+// 只会得到一堆假数据，那比跳过更糟 —— 它会污染间隔重复的输入。
+function nextCard() {
+  if (state.cursor >= state.queue.length) return;
+  state.skipped++;
+  state.cursor++;
+  state.current = null;
+  state.revealed = false;
+  state.typed = "";
+  state.typedResult = null;
+  state.gradeNote = "";
+  state.lastGrade = null;
+  render();
+  if (state.cursor < state.queue.length) fetchCard(state.queue[state.cursor].id);
+}
+
+async function undoLastGrade() {
+  const last = state.history.length ? state.history[state.history.length - 1] : null;
+  if (!last || state.busy) return;
+  state.busy = true;
+  try {
+    await api("/api/cards/" + last.cardId + "/undo", { method: "POST" });
+    state.history.pop();
+    state.sessionDone = Math.max(0, state.sessionDone - 1);
+    // 回到刚才那张卡，并且**保持翻面状态** —— 撤销的目的是改评分，
+    // 不是重新想一遍。
+    state.gradeNote = "";
+    const idx = state.queue.findIndex((c) => c.id === last.cardId);
+    if (idx >= 0) {
+      state.cursor = idx;
+      state.current = null;
+      render();
+      await fetchCard(last.cardId);
+      state.revealed = true;
+      state.lastGrade = null;
+      render();
+    } else {
+      render();
+    }
+    setBanner("ok", "已经撤销上一条评分，这张卡回到了队列。");
+    refreshCounts();
+  } catch (err) {
+    setBanner("bad", err.message + (err.hint ? "　→ " + err.hint : ""));
+  } finally {
+    state.busy = false;
+  }
 }
 
 function sceneBox(lesson, ex) {
@@ -919,6 +1418,11 @@ function buildRead(stage, data) {
   } else {
     stage.appendChild(el("hr"));
     stage.appendChild(sceneBox(data.lesson, ex));
+    // 翻面之后才给听。正面**刻意没有声音** —— 这条通道练的就是
+    // 「看字→进入场景」，正面出声的话它会退化成听力卡。
+    // 但翻面之后听一遍是必要的：不然用户永远不知道这句怎么念。
+    const audio = playButton(ex, { label: "听一遍" });
+    if (audio) stage.appendChild(audio);
   }
 }
 
@@ -926,16 +1430,22 @@ function buildListen(stage, data) {
   const ex = data.example;
   const hasAudio = !!(ex && ex.audio_path);
   const node = el("button", {
-    class: "playbtn", disabled: !hasAudio,
-    title: hasAudio ? "再听一遍" : "这条没有语音",
-    onClick: () => playAudio(ex && ex.audio_path),
+    class: "playbtn", disabled: !hasAudio && !speakSupported(),
+    title: hasAudio ? "再听一遍" : "这条还没有生成的音频，用系统语音朗读",
+    onClick: () => playSentence(ex),
   });
   node.appendChild(icon("play", 30));
   stage.appendChild(node);
   if (!hasAudio) {
+    // 没音频时**不给一个转不动的按钮**，而是把它念出来。
+    // 系统语音不算训练素材，但它比一片静音强得多 —— 用户至少知道这句怎么念。
     stage.appendChild(el("div", {
       class: "task",
-      text: "这条例句没有生成语音，可以先去训练包里点「补语音」。",
+      text: speakSupported()
+        ? "这条例句还没有生成的语音，上面这个按钮会用**系统语音**读一遍。"
+          + "想要真人音色，去训练包里点「补语音」。"
+        : "这条例句没有语音，而且这台机器的浏览器不支持系统朗读。"
+          + "去训练包里点「补语音」。",
     }));
   }
   if (!state.revealed) {
@@ -958,14 +1468,8 @@ function buildSpeak(stage, data) {
     stage.appendChild(btn("说完了，看原文", { class: "btn primary", onClick: reveal }));
   } else {
     stage.appendChild(el("div", { class: "answer", text: ex ? ex.sentence : "" }));
-    if (ex && ex.audio_path) {
-      const p = el("button", {
-        class: "playbtn small", title: "听一遍对照发音",
-        onClick: () => playAudio(ex.audio_path),
-      });
-      p.appendChild(icon("play", 16));
-      stage.appendChild(p);
-    }
+    const audio = playButton(ex, { label: "听一遍对照发音" });
+    if (audio) stage.appendChild(audio);
     stage.appendChild(sceneBox(data.lesson, ex));
   }
 }
@@ -997,14 +1501,8 @@ function buildType(stage, data) {
   } else {
     stage.appendChild(el("div", { class: "answer", text: sentence }));
     if (state.typedResult) stage.appendChild(renderDiff(state.typedResult));
-    if (ex && ex.audio_path) {
-      const p = el("button", {
-        class: "playbtn small", title: "听一遍",
-        onClick: () => playAudio(ex.audio_path),
-      });
-      p.appendChild(icon("play", 16));
-      stage.appendChild(p);
-    }
+    const audio = playButton(ex, { label: "听一遍" });
+    if (audio) stage.appendChild(audio);
     stage.appendChild(sceneBox(data.lesson, ex));
   }
 }
@@ -1042,6 +1540,8 @@ function buildBuild(stage, data) {
     return;
   }
   stage.appendChild(el("hr"));
+  const audio = playButton(ex, { label: "听一遍原句" });
+  if (audio) stage.appendChild(audio);
   for (const sw of swaps) {
     const box = el("div", { class: "scenebox", style: "margin-bottom:10px" });
     box.appendChild(el("div", {
@@ -1109,6 +1609,7 @@ async function fetchCard(cardId) {
     state.typed = "";
     state.typedResult = null;
     state.gradeNote = "";
+    state.lastGrade = null;
     // 换一张卡就换一种中文说法 —— 但同一张卡内部保持一致。
     const variants = (state.current.example && state.current.example.zh_variants) || [];
     state.variantIndex = variants.length > 1 ? Math.floor(Math.random() * variants.length) : 0;
@@ -1146,7 +1647,9 @@ async function grade(g) {
 
   if (g !== 0 && !state.revealed) {
     state.revealed = true;
-    state.gradeNote = "先核对一下答案 —— 确认没问题后再点一次「" + GRADE_LABEL[g] + "」。";
+    state.lastGrade = null;
+    state.gradeNote = "先核对一下答案 —— 确认没问题后再点一次「" + GRADE_LABEL[g]
+      + "」，键盘按 " + (g + 1) + " 也一样。";
     const ex = state.current.example;
     if (state.current.card.channel === "listen" && ex && ex.audio_path) playAudio(ex.audio_path);
     render();
@@ -1154,17 +1657,21 @@ async function grade(g) {
   }
 
   const started = performance.now();
+  const cardId = state.current.card.id;
+  const sentence = (state.current.example && state.current.example.sentence) || "";
   state.busy = true;
   try {
     const seconds = Math.max(0, (performance.now() - started) / 1000);
-    await api("/api/cards/" + state.current.card.id + "/grade", {
+    await api("/api/cards/" + cardId + "/grade", {
       method: "POST",
       body: JSON.stringify({ grade: g, seconds: seconds }),
     });
+    state.history.push({ cardId: cardId, grade: g, sentence: sentence });
     state.sessionDone++;
     state.cursor++;
     state.current = null;
     state.gradeNote = "";
+    state.lastGrade = g;
     render();
     if (state.cursor < state.queue.length) fetchCard(state.queue[state.cursor].id);
     refreshCounts();
@@ -1181,6 +1688,12 @@ async function loadQueue() {
     state.queue = data.cards || [];
     state.cursor = 0;
     state.current = null;
+    // 换一批队列就把会话内的「已评 / 已跳过 / 可撤销」一起归零 ——
+    // 上一批的撤销记录指向的卡已经不在这个队列里了。
+    state.history = [];
+    state.sessionDone = 0;
+    state.skipped = 0;
+    state.lastGrade = null;
     state.stats = data.stats || state.stats;
     render();
     if (state.queue.length) fetchCard(state.queue[0].id);
@@ -1190,17 +1703,32 @@ async function loadQueue() {
 }
 
 function refreshCounts() {
+  const st = state.stats || {};
   const due = $("#nav-due");
-  if (state.stats && due) {
-    const n = state.stats.due_now || 0;
+  if (due) {
+    const n = st.due_now || 0;
     due.textContent = n ? String(n) : "";
+  }
+  const lessons = $("#nav-lessons");
+  if (lessons) lessons.textContent = st.lessons ? String(st.lessons) : "";
+  const plans = $("#nav-plans");
+  if (plans) plans.textContent = st.plans ? String(st.plans) : "";
+  // 暂停的卡只在进阶密度下报数。放在导航上的数字是「现在要处理的量」，
+  // 而暂停的卡恰恰**不是**要处理的 —— 摆出来只会让人以为漏看了什么。
+  const cards = $("#nav-cards");
+  if (cards) {
+    cards.textContent = isAdvanced() && st.suspended ? String(st.suspended) : "";
   }
 }
 
 // ----------------------------------------------------------- 侧边栏交互键
 
-// 侧边栏里那一块「当前能做什么」。
-// 它是响应式的：没有卡的时候不摆一排死按钮，而是告诉用户现在该去哪。
+// ----------------------------------------------------------- 侧边栏
+
+// 侧边栏里**只放不跟着卡片走的东西**。
+//
+// 0.0.2 把评分键放在这里，0.0.3 又搬了回去 —— 理由写在 .grader 的样式注释里。
+// 现在这里有三块：非训练页时的「怎么回去」、训练页时的本次进度、快捷键表。
 function renderSideActions() {
   const host = $("#side-actions");
   if (!host) return;
@@ -1217,79 +1745,68 @@ function renderSideActions() {
       btn("开始训练", { class: "btn primary sm", onClick: () => setView("study") }, "study"),
     ]));
     host.appendChild(panel);
-    return;
-  }
-
-  const panel = el("div", { class: "panel" });
-  panel.appendChild(el("div", { class: "panel-title", text: "当前卡片" }));
-
-  const data = state.current;
-  if (!data || state.cursor >= state.queue.length) {
-    panel.appendChild(el("div", { class: "faint", text: "没有正在练的卡。" }));
-    panel.appendChild(el("div", { class: "row", style: "margin-top:9px" }, [
-      btn("刷新队列", { class: "btn sm", onClick: loadQueue }, "refresh"),
+  } else {
+    const total = state.queue.length;
+    const left = total ? Math.max(0, total - state.cursor) : 0;
+    const panel = el("div", { class: "panel" });
+    panel.appendChild(el("div", { class: "panel-title", text: "本次进度" }));
+    panel.appendChild(el("div", { class: "tally" }, [
+      el("div", null, [el("span", { text: "队列剩余" }), el("b", { text: String(left) })]),
+      el("div", null, [el("span", { text: "本次已练" }), el("b", { text: String(state.sessionDone) })]),
+      el("div", null, [el("span", { text: "今早到期" }), el("b", {
+        text: String((state.stats && state.stats.due_now) || 0),
+      })]),
+      isAdvanced()
+        ? el("div", null, [el("span", { text: "已暂停" }), el("b", {
+            text: String((state.stats && state.stats.suspended) || 0),
+          })])
+        : null,
     ]));
+    if (!total) {
+      panel.appendChild(el("div", { class: "row", style: "margin-top:9px" }, [
+        btn("刷新队列", { class: "btn sm", onClick: loadQueue }, "refresh"),
+      ]));
+    }
     host.appendChild(panel);
-    return;
   }
 
-  const preview = data.srs_preview || {};
-  const grades = el("div", { class: "grades" });
-  for (const g of [0, 1, 2, 3]) {
-    const info = preview[g] || preview[String(g)] || {};
-    const pending = !state.revealed && g !== 0;
-    grades.appendChild(el("button", {
-      class: "grade", "data-g": String(g),
-      "data-pending": pending ? "1" : "0",
-      title: pending
-        ? "点一下会把答案翻出来，核对后再评这一档"
-        : (info.human ? "下次复习：" + info.human : ""),
-      onClick: () => grade(g),
-    }, [
-      el("span", { class: "num", text: String(g + 1) }),
-      el("span", { class: "txt" }, [
-        el("b", { text: info.label || GRADE_LABEL[g] }),
-        el("span", { text: pending ? "先核对答案" : ("→ " + (info.human || "—")) }),
-      ]),
-    ]));
-  }
-  panel.appendChild(grades);
-
-  panel.appendChild(el("div", {
-    class: "faint", style: "margin-top:9px",
-    text: state.revealed
-      ? "凭刚才回想起来的难易程度评。键盘 1–4 也行。"
-      : "「没想起来」现在就能直接评。其余三档会先让你核对答案。",
-  }));
-
-  if (state.gradeNote) {
-    panel.appendChild(el("div", { class: "hint", style: "margin-top:8px", text: state.gradeNote }));
-  }
-
-  if (!state.revealed) {
-    panel.appendChild(el("div", { class: "row", style: "margin-top:9px" }, [
-      btn("翻面看答案", { class: "btn primary sm", onClick: reveal }, "book"),
-    ]));
-  }
-
-  host.appendChild(panel);
-
+  // 快捷键表。**只列真的有效的键**。列一个不生效的键比不列更糟 ——
+  // 用户会反复试，然后怀疑自己按错了。
+  const keys = [
+    ["空格", "翻面"],
+    ["1–4", "四档评分"],
+    ["←", "上一张"],
+    ["→", "下一张"],
+    ["Z", "撤销评分"],
+    ["E", "编辑这条"],
+  ];
   host.appendChild(el("div", { class: "panel" }, [
     el("div", { class: "panel-title", text: "快捷键" }),
-    el("div", { class: "hotkeys" }, [
-      el("div", null, [el("span", { class: "kbd", text: "空格" }), " 翻面"]),
-      el("div", null, [el("span", { class: "kbd", text: "1" }), " 没想起来"]),
-      el("div", null, [el("span", { class: "kbd", text: "2" }), " 吃力"]),
-      el("div", null, [el("span", { class: "kbd", text: "3" }), " 正常"]),
-      el("div", null, [el("span", { class: "kbd", text: "4" }), " 秒答"]),
-      el("div", null, [el("span", { class: "kbd", text: "Enter" }), " 提交 / 翻面"]),
-    ]),
+    el("div", { class: "hotkeys" }, keys.map((pair) => el("div", null, [
+      el("span", { class: "kbd", text: pair[0] }), " " + pair[1],
+    ]))),
   ]));
 }
 
 // ------------------------------------------------------------- 训练包视图
 
 function renderLessons(main) {
+  // 正停在某个包里的时候，要**留在那个包里**重画，不能掉回列表。
+  //
+  // 谁会把 render() 打到这里来：关掉编辑抽屉、换配色、改字号 ——
+  // 这些动作全都走 render()。掉回列表的话，用户改完一条例句一关抽屉，
+  // 眼前从「这个包的 8 条例句」突然变成「新建训练包」的表单，
+  // 会以为刚才那个包被自己弄没了。
+  //
+  // 为什么这里能放心用 openLesson 判断：**只有**「本来就停在详情页」
+  // 会带着值走到这儿 —— 点侧边栏进「训练包」走的是 setView()，
+  // 那里已经把 openLesson 清掉了。所以「想看列表」和「想留在包里」
+  // 这两种意图不会撞车。
+  if (state.openLesson) {
+    openLesson(state.openLesson);
+    return;
+  }
+
   main.appendChild(el("h1", { text: "训练包" }));
   main.appendChild(el("p", {
     class: "lead",
@@ -1465,6 +1982,12 @@ async function retryLesson(id, target) {
 
 async function openLesson(id) {
   state.view = "lessons";
+  // 记住「现在在看哪个包」。
+  //
+  // 0.0.2 漏了这一行，后果不只是「刷新回列表」：`refreshAfterEdit()` 靠它
+  // 判断要不要重画详情页，编辑完例句回到详情页时会看到改之前的内容 ——
+  // 用户会以为没保存成功，然后再改一次。
+  state.openLesson = Number(id) || null;
   if (location.hash.slice(1) !== "lessons") location.hash = "lessons";
   for (const b of document.querySelectorAll("#nav button")) {
     b.setAttribute("aria-current", String(b.dataset.view === "lessons"));
@@ -1536,7 +2059,7 @@ function renderLessonDetail(host, lesson) {
 
     if (ex.scene_image) {
       const thumb = el("img", {
-        class: "thumb", src: imagePath(ex.scene_image), alt: "场景配图",
+        class: "thumb", src: imageSrc(ex.scene_image), alt: "场景配图",
         loading: "lazy", referrerpolicy: "no-referrer", title: "点击放大",
         onClick: () => zoomImage(ex.scene_image),
       });
@@ -1551,7 +2074,14 @@ function renderLessonDetail(host, lesson) {
       p.appendChild(icon("play", 16));
       head.appendChild(p);
     } else {
-      head.appendChild(el("span", { class: "chip warn", text: "缺语音" }));
+      const fallback = playButton(ex, { label: "" });
+      if (fallback) {
+        fallback.title = "这条还没生成语音，点这里用系统语音读一遍";
+        head.appendChild(fallback);
+        head.appendChild(el("span", { class: "chip warn", text: "缺语音（可系统朗读）" }));
+      } else {
+        head.appendChild(el("span", { class: "chip warn", text: "缺语音" }));
+      }
     }
     box.appendChild(head);
 
@@ -1569,9 +2099,22 @@ function renderLessonDetail(host, lesson) {
         text: { read: "练阅读", listen: "练听力", speak: "练口语", type: "练打字", build: "练造句" }[ch],
       }));
     }
+    // 编辑放在最后，样式和「练 XX」一样 —— 它只是又一个动作，
+    // 不该在视觉上被强调成主操作。
+    btns.appendChild(el("button", {
+      onClick: () => openEditorForExample(lesson.id, ex.id),
+      text: "编辑",
+    }));
+    btns.appendChild(el("button", {
+      class: "danger",
+      onClick: () => removeExample(lesson.id, ex),
+      text: "删除",
+    }));
     box.appendChild(btns);
     host.appendChild(box);
   });
+
+  host.appendChild(addExampleCard(lesson));
 
   if (lesson.swaps && lesson.swaps.length) {
     host.appendChild(el("h2", { text: "造句替换参考" }));
@@ -1589,6 +2132,101 @@ function renderLessonDetail(host, lesson) {
   }
 }
 
+// 手工往训练包里加一条例句。
+//
+// 「模型生成的例句里差一条」这种情况太常见了 —— 而为了补一条去重新生成
+// 整个包，会把已经练了半个月的进度一起清掉。所以给一个单独的入口。
+function addExampleCard(lesson) {
+  const box = el("div", { class: "card" });
+  box.appendChild(el("h2", { style: "margin-top:0", text: "自己加一条例句" }));
+  box.appendChild(el("p", {
+    class: "faint", style: "margin:-6px 0 12px",
+    text: "加进来的句子会自动铺成五张卡，并顺手合成语音、配场景图。"
+        + "已有的例句和进度一概不动。",
+  }));
+  box.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: "英文句子" }),
+    el("input", { type: "text", id: "new-ex-sentence", placeholder: "例如：I'd rather stay home tonight." }),
+  ]));
+  box.appendChild(el("div", { class: "grid2" }, [
+    el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "场景（英文，可留空）" }),
+      el("input", { type: "text", id: "new-ex-scene-en", placeholder: "什么时候会说这句" }),
+    ]),
+    el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "重生成时用的检索关键词（可留空）" }),
+      el("input", { type: "text", id: "new-ex-query", placeholder: "留空就自动从场景里提" }),
+    ]),
+  ]));
+  const row = el("div", { class: "row" });
+  row.appendChild(btn("加进去", { class: "btn primary", onClick: () => submitNewExample(lesson) }, "plus"));
+  row.appendChild(btn("补齐缺失的卡片", {
+    class: "btn sm ghost",
+    onClick: async () => {
+      try {
+        const r = await api("/api/lessons/" + lesson.id + "/rebuild-cards", { method: "POST" });
+        setBanner("ok", r.created ? "补了 " + r.created + " 张卡。" : "卡片是齐的，不用补。");
+        openLesson(lesson.id);
+      } catch (err) { setBanner("bad", err.message); }
+    },
+  }, "refresh"));
+  box.appendChild(row);
+  box.appendChild(el("div", { id: "new-ex-msg" }));
+  return box;
+}
+
+async function submitNewExample(lesson) {
+  const msg = $("#new-ex-msg");
+  const sentence = ($("#new-ex-sentence") || {}).value || "";
+  if (!sentence.trim()) {
+    clear(msg);
+    msg.appendChild(el("div", { class: "err" }, [el("b", { text: "先填一句英文。" })]));
+    return;
+  }
+  clear(msg);
+  msg.appendChild(spin("正在加例句（会顺带合成语音和配图，可能要十几秒）…"));
+  try {
+    const r = await api("/api/lessons/" + lesson.id + "/examples", {
+      method: "POST",
+      body: JSON.stringify({
+        sentence: sentence.trim(),
+        scene_en: ($("#new-ex-scene-en") || {}).value || "",
+        make_media: true,
+      }),
+    });
+    clear(msg);
+    if (r.failures && r.failures.length) {
+      // 例句加上了但媒体没齐 —— 说清楚，别让用户以为全好了。
+      msg.appendChild(el("div", { class: "hint" }, [
+        document.createTextNode("例句加好了，但这几项没成："),
+        el("br"),
+        document.createTextNode(r.failures.join("；")),
+      ]));
+    } else {
+      msg.appendChild(el("div", { class: "hint ok", text: "加好了，语音和配图都有了。" }));
+    }
+    setTimeout(() => openLesson(lesson.id), 700);
+  } catch (err) {
+    clear(msg);
+    msg.appendChild(errorBlock(err));
+  }
+}
+
+async function removeExample(lessonId, ex) {
+  const ok = window.confirm(
+    "删掉这条例句？\n\n" + ex.sentence + "\n\n它的五张卡和复习进度会一起没有，不能撤销。"
+  );
+  if (!ok) return;
+  try {
+    await api("/api/examples/" + ex.id, { method: "DELETE" });
+    setBanner("ok", "删掉了。");
+    openLesson(lessonId);
+    refreshCounts();
+  } catch (err) {
+    setBanner("bad", err.message);
+  }
+}
+
 // 点缩略图放大。用窗口本身当遮罩，不引第三方弹层。
 function zoomImage(name) {
   const overlay = el("div", {
@@ -1597,7 +2235,7 @@ function zoomImage(name) {
     onClick: () => overlay.remove(),
   }, [
     el("img", {
-      src: imagePath(name),
+      src: imageSrc(name),
       style: "max-width:100%;max-height:100%;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.6)",
     }),
   ]);
@@ -2145,6 +2783,7 @@ function renderSettings(main) {
   }));
 
   const cfg = state.config || {};
+  main.appendChild(cardLook());
   main.appendChild(cardLLM(cfg));
   main.appendChild(cardTTS(cfg));
   main.appendChild(cardImages(cfg));
@@ -2156,6 +2795,88 @@ function renderSettings(main) {
   toggleImageFields();
   runSelfCheck();
   loadDataLocation();
+}
+
+// ------------------------------------------------------------- 界面
+
+function cardLook() {
+  const card = cardShell(
+    "界面",
+    "配色和字号都影响眼睛累不累。三套配色都能用，选一个看着舒服的就行 —— "
+    + "没有「正确」的那套。"
+  );
+
+  card.appendChild(el("div", { class: "optgrid" }, THEMES.map((t) => {
+    const node = el("button", {
+      class: "optcard", "aria-pressed": String(state.theme === t.id),
+      // 加一个**精确**的定位键。没有它的话，想选「深色」只能靠
+      // 「卡片文字里有没有『深色』」去找 —— 而「跟随系统」那张卡的说明里
+      // 恰好写着「系统切到深色时跟着变」，于是找到的是它。
+      // 界面上一直有这个问题：靠文案定位，文案一改就错。
+      "data-opt": "theme:" + t.id,
+      onClick: () => setLook({ theme: t.id }),
+    }, [
+      el("b", { text: t.label }),
+      el("span", { text: t.what }),
+      el("div", { class: "swatches" }, screenSwatches(t.id)),
+    ]);
+    return node;
+  })));
+
+  card.appendChild(el("h2", { style: "margin:20px 0 8px", text: "阅读字号" }));
+  card.appendChild(el("div", { class: "optgrid" }, SIZES.map((s) => el("button", {
+    class: "optcard", "aria-pressed": String(state.fontSize === s.id),
+    "data-opt": "size:" + s.id,
+    onClick: () => setLook({ fontSize: s.id }),
+  }, [
+    el("b", { text: s.label }),
+    el("span", { text: s.what }),
+  ]))));
+
+  card.appendChild(el("h2", { style: "margin:20px 0 8px", text: "界面密度" }));
+  card.appendChild(el("div", { class: "optgrid" }, [
+    el("button", {
+      class: "optcard", "aria-pressed": String(state.density === "simple"),
+      "data-opt": "density:simple",
+      onClick: () => setLook({ density: "simple" }),
+    }, [
+      el("b", { text: "简易" }),
+      el("span", { text: "只给必需的东西。默认就是这个。" }),
+    ]),
+    el("button", {
+      class: "optcard", "aria-pressed": String(state.density === "advanced"),
+      "data-opt": "density:advanced",
+      onClick: () => setLook({ density: "advanced" }),
+    }, [
+      el("b", { text: "进阶" }),
+      el("span", {
+        text: "摊开 SRS 数字、卡片 id、到期时间，侧边栏多显示已暂停的数量。"
+            + "给想手动调进度的人。",
+      }),
+    ]),
+  ]));
+
+  card.appendChild(el("div", { class: "hint" }, [
+    document.createTextNode(
+      "「卡片」页里能筛选、暂停、批量推后，并直接改某一条例句的原文、场景、"
+      + "中文说法、语音和配图 —— 那里不需要切到进阶也会出现。"
+      + "密度这一档只影响训练页和设置页显示多少数字。"
+    ),
+  ]));
+  return card;
+}
+
+// 每个配色选项下面摆几块代表色。文字描述（「暖白」）谁都能写，
+// 但只有色块能让人一眼看出自己会不会喜欢。
+function screenSwatches(themeId) {
+  const palettes = {
+    auto: ["#ebe6dc", "#33302a", "#3a6f61"],
+    warm: ["#ebe6dc", "#33302a", "#3a6f61"],
+    light: ["#f5f6f8", "#1d2129", "#2f5f8f"],
+    dark: ["#191a1c", "#ddd9d2", "#69b8a2"],
+  };
+  return (palettes[themeId] || palettes.warm).map((color) =>
+    el("i", { style: "background:" + color }));
 }
 
 function cardShell(title, subtitle) {
@@ -2803,18 +3524,775 @@ async function doBackup() {
   }
 }
 
-// ------------------------------------------------------------------ 键盘
+// --------------------------------------------------------- 卡片浏览器
 
+// 「Anki 的灵活度」这件事，一半在编辑（下面那个抽屉），另一半在这里。
+//
+// 一个只能看到「下一张该练什么」的界面，是没法整理的：学习到一定量之后，
+// 人真正想做的是「这一批我都熟了，一起推两周」「这五张先别出现」
+// 「把这个包里所有造句卡重置」—— 这些动作都需要**先看见一批卡**。
+// 所以这一页是列表 + 筛选 + 多选，而不是又一个漂亮的空状态。
+
+const STATE_LABEL = {
+  all: "全部", due: "今天到期", new: "没学过的", learning: "学过但没到期",
+  suspended: "已暂停",
+};
+
+async function renderCards(main) {
+  main.appendChild(el("h1", { text: "卡片" }));
+  main.appendChild(el("p", {
+    class: "lead",
+    text: "每个训练包会为每条例句生成五张卡（阅读/听力/口语/打字/造句）。"
+        + "这里可以筛选、暂停、改到期时间 —— 也可以点「编辑」改这条例句本身。",
+  }));
+
+  // 筛选器的训练包下拉需要一份清单。没取到就先取，取不到也不挡住列表 ——
+  // 只是少一个下拉框，比整页空着强。
+  if (!state.lessonList) {
+    try {
+      const data = await api("/api/lessons");
+      state.lessonList = data.lessons || [];
+    } catch (err) {
+      state.lessonList = [];
+    }
+  }
+
+  const filt = el("div", { class: "filters" });
+
+  const lessonSel = el("select", null, [el("option", { value: "0", text: "全部训练包" })]);
+  for (const lesson of state.lessonList || []) {
+    const opt = el("option", { value: String(lesson.id), text: "#" + lesson.id + " " + lesson.target });
+    if (Number(state.browser.lesson_id) === lesson.id) opt.selected = true;
+    lessonSel.appendChild(opt);
+  }
+  lessonSel.addEventListener("change", () => {
+    state.browser.lesson_id = Number(lessonSel.value) || 0;
+    state.browser.picked = [];
+    loadBrowser();
+  });
+  filt.appendChild(el("label", null, [el("span", { text: "训练包" }), lessonSel]));
+
+  const chanSel = el("select", null, [el("option", { value: "", text: "全部通道" })]);
+  for (const c of (state.catalog && state.catalog.channels) || []) {
+    const opt = el("option", { value: c.id, text: c.label });
+    if (state.browser.channel === c.id) opt.selected = true;
+    chanSel.appendChild(opt);
+  }
+  chanSel.addEventListener("change", () => {
+    state.browser.channel = chanSel.value;
+    state.browser.picked = [];
+    loadBrowser();
+  });
+  filt.appendChild(el("label", null, [el("span", { text: "通道" }), chanSel]));
+
+  const stateSel = el("select");
+  for (const key of Object.keys(STATE_LABEL)) {
+    const opt = el("option", { value: key, text: STATE_LABEL[key] });
+    if (state.browser.state === key) opt.selected = true;
+    stateSel.appendChild(opt);
+  }
+  stateSel.addEventListener("change", () => {
+    state.browser.state = stateSel.value;
+    state.browser.picked = [];
+    loadBrowser();
+  });
+  filt.appendChild(el("label", null, [el("span", { text: "状态" }), stateSel]));
+
+  const search = el("input", {
+    type: "text", value: state.browser.q || "", placeholder: "搜例句或目标词…",
+  });
+  let searchTimer = null;
+  search.addEventListener("input", () => {
+    state.browser.q = search.value;
+    // 输入框上做 300ms 防抖：每敲一个字发一次请求会让列表一直闪。
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(loadBrowser, 300);
+  });
+  filt.appendChild(el("label", { class: "grow" }, [el("span", { text: "搜索" }), search]));
+  filt.appendChild(btn("刷新", { class: "btn sm", onClick: loadBrowser }, "refresh"));
+  main.appendChild(filt);
+
+  main.appendChild(el("div", { id: "browser-host" }));
+  loadBrowser();
+}
+
+async function loadBrowser() {
+  const host = $("#browser-host");
+  if (!host) return;
+  clear(host);
+  host.appendChild(spin("正在读卡片…"));
+
+  const q = new URLSearchParams();
+  if (state.browser.lesson_id) q.set("lesson_id", String(state.browser.lesson_id));
+  if (state.browser.channel) q.set("channel", state.browser.channel);
+  q.set("state", state.browser.state || "all");
+  if (state.browser.q) q.set("q", state.browser.q);
+  q.set("limit", "300");
+
+  try {
+    const data = await api("/api/cards?" + q.toString());
+    state.browser.list = data.cards || [];
+    state.browser.total = data.total || 0;
+    drawBrowser(host);
+  } catch (err) {
+    clear(host);
+    host.appendChild(errorBlock(err));
+  }
+}
+
+function drawBrowser(host) {
+  clear(host);
+  const list = state.browser.list || [];
+  const picked = state.browser.picked || [];
+
+  if (!list.length) {
+    host.appendChild(el("div", { class: "card" }, [
+      el("div", { class: "empty" }, [
+        el("b", { text: "这个筛选下没有卡片" }),
+        el("div", { class: "faint", text: "换一个训练包或状态试试。" }),
+      ]),
+    ]));
+    return;
+  }
+
+  if (picked.length) {
+    host.appendChild(el("div", { class: "bulkbar" }, [
+      el("b", { text: "选中 " + picked.length + " 张" }),
+      btn("暂停", { class: "btn sm", onClick: () => bulkPatch({ suspended: true }) }),
+      btn("恢复", { class: "btn sm", onClick: () => bulkPatch({ suspended: false }) }),
+      btn("推后 1 天", { class: "btn sm", onClick: () => bulkPush(1) }),
+      btn("推后 7 天", { class: "btn sm", onClick: () => bulkPush(7) }),
+      btn("当作没学过", { class: "btn sm", onClick: () => bulkPatch({ introduced: false }) }),
+      btn("取消选择", {
+        class: "btn sm ghost",
+        onClick: () => { state.browser.picked = []; drawBrowser(host); },
+      }),
+    ]));
+  }
+
+  const table = el("table", { class: "browser" });
+  const thead = el("thead");
+  const headRow = el("tr");
+  const allPicked = list.every((c) => picked.indexOf(c.id) >= 0);
+  const master = el("input", { type: "checkbox" });
+  if (allPicked) master.checked = true;
+  master.addEventListener("change", () => {
+    state.browser.picked = master.checked ? list.map((c) => c.id) : [];
+    drawBrowser(host);
+  });
+  headRow.appendChild(el("th", null, [master]));
+  for (const label of ["通道", "目标 / 例句", "到期", "间隔", "次数", ""]) {
+    headRow.appendChild(el("th", { text: label }));
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = el("tbody");
+  for (const card of list) {
+    const tr = el("tr", { class: (card.suspended ? "off " : "") + (picked.indexOf(card.id) >= 0 ? "picked" : "") });
+    // 行上留 id 和暂停状态：批量操作、以及冒烟测试都要能一眼认出是哪张卡。
+    tr.dataset.id = String(card.id);
+    tr.dataset.suspended = card.suspended ? "1" : "0";
+
+    const box = el("input", { type: "checkbox" });
+    if (picked.indexOf(card.id) >= 0) box.checked = true;
+    box.addEventListener("change", () => {
+      const set = new Set(state.browser.picked);
+      if (box.checked) set.add(card.id); else set.delete(card.id);
+      state.browser.picked = Array.from(set);
+      drawBrowser(host);
+    });
+    tr.appendChild(el("td", null, [box]));
+
+    const chan = ((state.catalog && state.catalog.channels) || [])
+      .filter((c) => c.id === card.channel)[0];
+    tr.appendChild(el("td", null, [el("span", {
+      class: "mini", text: (chan && chan.label) || card.channel,
+    })]));
+
+    tr.appendChild(el("td", { class: "sent" }, [
+      el("div", { text: card.target || "（整包）" }),
+      el("div", { class: "faint", text: card.sentence || "" }),
+    ]));
+
+    tr.appendChild(el("td", { class: "num", text: dueText(card) }));
+    tr.appendChild(el("td", { class: "num", text: card.interval ? fmtInterval(card.interval) : "新卡" }));
+    tr.appendChild(el("td", { class: "num", text: card.reps + " 次" }));
+
+    const acts = el("div", { class: "rowacts" });
+    acts.appendChild(el("button", {
+      text: card.suspended ? "恢复" : "暂停",
+      onClick: () => patchOne(card.id, { suspended: !card.suspended }),
+    }));
+    acts.appendChild(el("button", {
+      text: "编辑",
+      onClick: () => openEditorForCard(card),
+    }));
+    acts.appendChild(el("button", {
+      text: "打开",
+      title: "去这个训练包",
+      onClick: () => { setView("lessons"); openLesson(card.lesson_id); },
+    }));
+    tr.appendChild(el("td", null, [acts]));
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+
+  host.appendChild(el("div", { class: "faint", style: "margin-bottom:8px" }, [
+    document.createTextNode("显示 " + list.length + " / 共 " + (state.browser.total || list.length) + " 张"),
+  ]));
+  host.appendChild(table);
+
+  host.appendChild(el("div", { class: "hint" }, [
+    document.createTextNode("想直接改某一条例句的内容（原文、场景、中文说法、语音、配图），点那一行的「编辑」。"),
+  ]));
+}
+
+function dueText(card) {
+  if (!card.introduced) return "新卡";
+  const due = new Date(card.due_at);
+  if (isNaN(due.getTime())) return "—";
+  const diff = due.getTime() - Date.now();
+  if (diff <= 0) return "现在";
+  const mins = diff / 60000;
+  if (mins < 60) return Math.round(mins) + " 分";
+  const hours = mins / 60;
+  if (hours < 24) return Math.round(hours) + " 时";
+  return Math.round(hours / 24) + " 天";
+}
+
+function fmtInterval(days) {
+  if (days < 1) return Math.round(days * 24) + " 时";
+  if (days < 30) return (Math.round(days * 10) / 10) + " 天";
+  return (Math.round(days / 30 * 10) / 10) + " 月";
+}
+
+async function patchOne(cardId, patch) {
+  try {
+    await api("/api/cards/" + cardId, { method: "PATCH", body: JSON.stringify(patch) });
+    loadBrowser();
+    refreshCounts();
+  } catch (err) {
+    setBanner("bad", err.message);
+  }
+}
+
+async function bulkPatch(patch) {
+  const ids = state.browser.picked || [];
+  if (!ids.length) return;
+  try {
+    const r = await api("/api/cards/batch", {
+      method: "POST", body: JSON.stringify({ ids: ids, patch: patch }),
+    });
+    setBanner("ok", "改了 " + r.changed + " 张卡。");
+    state.browser.picked = [];
+    loadBrowser();
+    refreshCounts();
+  } catch (err) {
+    setBanner("bad", err.message);
+  }
+}
+
+async function bulkPush(days) {
+  const ids = state.browser.picked || [];
+  if (!ids.length) return;
+  try {
+    const r = await api("/api/cards/push", {
+      method: "POST", body: JSON.stringify({ ids: ids, days: days }),
+    });
+    setBanner("ok", "把 " + r.changed + " 张卡往后推了 " + days + " 天。");
+    state.browser.picked = [];
+    loadBrowser();
+    refreshCounts();
+  } catch (err) {
+    setBanner("bad", err.message);
+  }
+}
+
+// ------------------------------------------------------- 卡片编辑器抽屉
+
+// 这是「老手调控」的落点，但**新手也不会被它挡住** ——
+// 抽屉要主动点「编辑这条」或按 E 才出来，平时不占任何地方。
+//
+// 里面的分组顺序是按「改动的可能性」排的：
+//   1. 文字（原文 / 场景 / 中文说法）—— 最常改，模型偶尔会写歪
+//   2. 语音与配图 —— 次常改，某一条合成失败时来补
+//   3. 复习参数 —— 老手才动，且用「简易」密度时默认折起来
+//
+// 保存走 PATCH，**只提交改过的字段**。整份提交的话，两个窗口同时开着
+// 就会互相覆盖 —— 这类问题在单机工具里也会出现（比如训练页和浏览器页同时开着）。
+
+async function openEditorForCard(card) {
+  try {
+    const data = await api("/api/cards/" + card.id);
+    openEditor(data);
+  } catch (err) {
+    setBanner("bad", "打不开这条：" + err.message);
+  }
+}
+
+// 从训练包详情页的某条例句打开（那里没有卡片上下文，就用第一张卡）。
+async function openEditorForExample(lessonId, exampleId) {
+  try {
+    const lesson = await api("/api/lessons/" + lessonId);
+    const card = (lesson.cards || []).filter((c) => c.example_id === exampleId)[0];
+    if (card) {
+      const data = await api("/api/cards/" + card.id);
+      openEditor(data);
+      return;
+    }
+    // 没有卡就先补一张：编辑例句时「编辑完却练不到」是最坏的结果。
+    await api("/api/lessons/" + lessonId + "/rebuild-cards", { method: "POST" });
+    const again = await api("/api/lessons/" + lessonId);
+    const fresh = (again.cards || []).filter((c) => c.example_id === exampleId)[0];
+    if (fresh) openEditor(await api("/api/cards/" + fresh.id));
+    else setBanner("warn", "这条例句没有对应的卡片，先补一次卡再编辑。");
+  } catch (err) {
+    setBanner("bad", "打不开这条：" + err.message);
+  }
+}
+
+function openEditor(data) {
+  if (!data || !data.example) {
+    setBanner("warn", "这张卡没有对应的例句（整包级的卡暂时不能从这里编辑）。");
+    return;
+  }
+  const ex = data.example;
+  state.editing = {
+    cardId: data.card.id,
+    lessonId: data.card.lesson_id,
+    exampleId: ex.id,
+    channel: data.card.channel,
+    draft: {
+      sentence: ex.sentence || "",
+      scene_en: ex.scene_en || "",
+      scene_zh: ex.scene_zh || "",
+      register: ex.register || "",
+      variants: (ex.zh_variants || []).slice(),
+      scene_image: ex.scene_image || "",
+    },
+    card: data.card,
+    audio_path: ex.audio_path || "",
+    msg: "",
+    busy: false,
+  };
+  drawEditor();
+}
+
+function closeEditor() {
+  state.editing = null;
+  const host = $("#drawer-host");
+  if (host) clear(host);
+  render();
+}
+
+function drawEditor() {
+  let host = $("#drawer-host");
+  if (!host) {
+    host = el("div", { id: "drawer-host" });
+    document.body.appendChild(host);
+  }
+  clear(host);
+  const ed = state.editing;
+  if (!ed) return;
+
+  const card = ed.card;
+  const chan = ((state.catalog && state.catalog.channels) || [])
+    .filter((c) => c.id === ed.channel)[0];
+
+  const drawer = el("div", { class: "drawer" });
+
+  // ---- 头部 ----
+  const head = el("div", { class: "drawer-head" });
+  head.appendChild(el("div", { class: "grow" }, [
+    el("h2", { text: "编辑例句" }),
+    el("div", {
+      class: "sub",
+      text: "这张卡来自：" + (chan && chan.label) + " · 卡片 #" + card.id
+          + " · 这条例句的五个通道会一起改",
+    }),
+  ]));
+  head.appendChild(btn("关闭", { class: "btn sm ghost", onClick: closeEditor }));
+  drawer.appendChild(head);
+
+  // ---- 文字 ----
+  const textBox = el("div", { class: "subcard" });
+  textBox.appendChild(el("h3", { text: "文字" }));
+  textBox.appendChild(el("label", { class: "field" }, [
+    el("span", { class: "lab", text: "例句原文（英文）" }),
+    el("textarea", {
+      id: "ed-sentence",
+      onInput: (e) => { ed.draft.sentence = e.target.value; },
+    }, [document.createTextNode(ed.draft.sentence)]),
+  ]));
+  textBox.appendChild(el("label", { class: "field" }, [
+    el("span", {
+      class: "lab",
+      text: "场景（英文）—— 写「什么情况下会说这句话」，不是翻译",
+    }),
+    el("textarea", {
+      id: "ed-scene-en",
+      onInput: (e) => { ed.draft.scene_en = e.target.value; },
+    }, [document.createTextNode(ed.draft.scene_en)]),
+  ]));
+  textBox.appendChild(el("label", { class: "field" }, [
+    el("span", {
+      class: "lab",
+      text: "中文说法（多个，每次随机抽一个 —— 中文和英文之间不要形成一一对应）",
+    }),
+    variantsEditor(ed),
+  ]));
+  textBox.appendChild(el("label", { class: "field", style: "margin-bottom:0" }, [
+    el("span", { class: "lab", text: "语域（如：日常口语 / 正式书面）" }),
+    el("input", {
+      type: "text", value: ed.draft.register,
+      onInput: (e) => { ed.draft.register = e.target.value; },
+    }),
+  ]));
+  drawer.appendChild(textBox);
+
+  // ---- 语音与配图 ----
+  const mediaBox = el("div", { class: "subcard" });
+  mediaBox.appendChild(el("h3", { text: "语音与配图" }));
+  mediaBox.appendChild(el("div", { class: "media-row" }, [
+    el("div", { class: "grow" }, [
+      el("div", { class: "faint", text: ed.audio_path ? "已有语音：" + ed.audio_path : "还没有语音" }),
+      el("div", { class: "row", style: "margin-top:8px" }, [
+        ed.audio_path
+          ? btn("试听", { class: "btn sm", onClick: () => playAudio(ed.audio_path) }, "play")
+          : null,
+        btn("重新生成语音", {
+          class: "btn sm",
+          onClick: () => regenAudio(ed),
+        }, "refresh"),
+        !ed.audio_path ? btn("用系统语音读一遍", {
+          class: "btn sm ghost",
+          onClick: () => speakText(ed.draft.sentence),
+        }) : null,
+      ]),
+      el("div", {
+        class: "faint", style: "margin-top:7px",
+        text: "改过原文之后一定要重新生成语音 —— 否则听到的和看到的是两句不同的话。",
+      }),
+    ]),
+  ]));
+
+  const imgWrap = el("div", { class: "media-row", style: "margin-top:12px" });
+  if (ed.draft.scene_image) {
+    imgWrap.appendChild(el("img", {
+      src: imageSrc(ed.draft.scene_image), alt: "场景配图",
+      referrerpolicy: "no-referrer",
+    }));
+  } else {
+    imgWrap.appendChild(el("div", {
+      class: "imgfail", style: "max-width:120px;height:84px",
+      text: "没有配图",
+    }));
+  }
+  const imgActs = el("div", { class: "grow" }, [
+    el("div", { class: "faint", text: "配图跟着「场景（英文）」走" }),
+    el("div", { class: "row", style: "margin-top:8px" }, [
+      el("input", {
+        type: "text", id: "ed-img", placeholder: "或粘贴一个图片地址…",
+        style: "max-width:230px",
+      }),
+      btn("用这个地址", { class: "btn sm", onClick: () => useImageUrl(ed) }),
+      btn("重新生成", { class: "btn sm", onClick: () => regenImage(ed) }, "image"),
+    ]),
+    el("div", {
+      class: "faint", style: "margin-top:7px",
+      text: "默认是「检索 + 画图 并行」。配到不合适的图时，这里可以换一张，"
+          + "或者贴一个自己找的地址。",
+    }),
+  ]);
+  imgWrap.appendChild(imgActs);
+  mediaBox.appendChild(imgWrap);
+  drawer.appendChild(mediaBox);
+
+  // ---- 复习参数 ----
+  drawer.appendChild(srsEditor(ed));
+
+  // ---- 底部 ----
+  const foot = el("div", { class: "drawer-foot" });
+  foot.appendChild(btn(ed.busy ? "保存中…" : "保存", {
+    class: "btn primary", onClick: () => saveEditor(ed),
+  }, "check"));
+  foot.appendChild(btn("删除这条例句", {
+    class: "btn danger", onClick: () => deleteEditingExample(ed),
+  }, "trash"));
+  foot.appendChild(el("span", { class: "faint", text: "Esc 关闭" }));
+  drawer.appendChild(foot);
+
+  if (ed.msg) {
+    drawer.appendChild(typeof ed.msg === "string"
+      ? el("div", { class: "hint", text: ed.msg })
+      : ed.msg);
+  }
+
+  host.appendChild(el("div", {
+    class: "drawer-wrap",
+    onClick: (e) => { if (e.target === e.currentTarget) closeEditor(); },
+  }, [drawer]));
+}
+
+// 中文说法是多条。用「一行一条」而不是 JSON ——
+// 让用户手写带引号的数组是在给自己找麻烦。
+function variantsEditor(ed) {
+  const box = el("div", { class: "varlist" });
+  const rows = el("div", { class: "varlist" });
+  const redraw = () => {
+    clear(rows);
+    ed.draft.variants.forEach((value, i) => {
+      const row = el("div", { class: "varrow" });
+      row.appendChild(el("input", {
+        type: "text", value: value,
+        onInput: (e) => { ed.draft.variants[i] = e.target.value; },
+      }));
+      row.appendChild(el("button", {
+        class: "iconbtn", title: "删掉这条说法",
+        onClick: () => { ed.draft.variants.splice(i, 1); redraw(); },
+      }, [icon("trash", 14)]));
+      rows.appendChild(row);
+    });
+    if (!ed.draft.variants.length) {
+      rows.appendChild(el("div", { class: "faint", text: "一条都没有。至少给一条 —— 场景是这张卡的正面。" }));
+    }
+  };
+  redraw();
+  box.appendChild(rows);
+  box.appendChild(el("div", { class: "row", style: "margin-top:7px" }, [
+    btn("加一条说法", {
+      class: "btn sm",
+      onClick: () => { ed.draft.variants.push(""); redraw(); },
+    }, "plus"),
+  ]));
+  return box;
+}
+
+function srsEditor(ed) {
+  const card = ed.card;
+  const box = el("div", { class: "subcard" });
+  box.appendChild(el("h3", { text: "复习参数（老手用）" }));
+
+  if (!isAdvanced()) {
+    box.appendChild(el("div", {
+      class: "faint",
+      text: "当前是「简易」界面，这里只显示摘要。想直接改数字，"
+          + "去「设置 → 界面」把界面密度切到「进阶」。",
+    }));
+    box.appendChild(el("div", { class: "faint", style: "margin-top:8px" }, [
+      document.createTextNode(
+        "到期 " + dueText(card) + " · 间隔 " + (card.interval ? fmtInterval(card.interval) : "新卡")
+        + " · 难度 " + card.ease + " · 练过 " + card.reps + " 次"
+      ),
+    ]));
+    return box;
+  }
+
+  box.appendChild(el("div", { class: "grid2" }, [
+    el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "间隔（天）—— 改它会把到期时间一起算出来" }),
+      el("input", {
+        type: "number", id: "ed-interval", step: "0.5", min: "0",
+        value: card.interval || 0,
+        onChange: (e) => patchCardNow(ed, { interval: Number(e.target.value) }),
+      }),
+    ]),
+    el("label", { class: "field" }, [
+      el("span", { class: "lab", text: "难度系数（1.3 – 3.5，越大间隔涨得越快）" }),
+      el("input", {
+        type: "number", id: "ed-ease", step: "0.05", min: "1.3", max: "3.5",
+        value: card.ease || 2.5,
+        onChange: (e) => patchCardNow(ed, { ease: Number(e.target.value) }),
+      }),
+    ]),
+  ]));
+  box.appendChild(el("div", { class: "row" }, [
+    btn("推后 1 天", { class: "btn sm", onClick: () => patchCardNow(ed, { push: 1 }) }),
+    btn("推后 7 天", { class: "btn sm", onClick: () => patchCardNow(ed, { push: 7 }) }),
+    btn(card.suspended ? "恢复这张卡" : "暂停这张卡", {
+      class: "btn sm", onClick: () => patchCardNow(ed, { suspended: !card.suspended }),
+    }),
+    btn("当作没学过", { class: "btn sm ghost", onClick: () => patchCardNow(ed, { introduced: false }) }),
+  ]));
+  box.appendChild(el("div", { class: "faint", style: "margin-top:9px" }, [
+    document.createTextNode(
+      "卡片 #" + card.id + " · 到期 " + card.due_at + " · 练过 " + card.reps
+      + " 次 · 忘过 " + card.lapses + " 次"
+    ),
+  ]));
+  return box;
+}
+
+async function patchCardNow(ed, patch) {
+  try {
+    let result;
+    if ("push" in patch) {
+      result = await api("/api/cards/push", {
+        method: "POST", body: JSON.stringify({ ids: [ed.cardId], days: patch.push }),
+      });
+    } else {
+      result = await api("/api/cards/" + ed.cardId, {
+        method: "PATCH", body: JSON.stringify(patch),
+      });
+    }
+    const fresh = await api("/api/cards/" + ed.cardId);
+    ed.card = fresh.card;
+    ed.msg = result && result.changed ? "推后了 " + patch.push + " 天。" : "改了。";
+    drawEditor();
+    refreshCounts();
+  } catch (err) {
+    ed.msg = errorBlock(err);
+    drawEditor();
+  }
+}
+
+async function saveEditor(ed) {
+  if (ed.busy) return;
+  ed.busy = true;
+  try {
+    const d = ed.draft;
+    await api("/api/examples/" + ed.exampleId, {
+      method: "PATCH",
+      body: JSON.stringify({
+        sentence: d.sentence.trim(),
+        scene_en: d.scene_en,
+        scene_zh: d.scene_zh,
+        register: d.register,
+        zh_variants: d.variants.map((v) => v.trim()).filter(Boolean),
+      }),
+    });
+    setBanner("ok", "改好了。如果改了原文，记得点一次「重新生成语音」。");
+    await refreshAfterEdit(ed);
+    ed.busy = false;
+    drawEditor();
+  } catch (err) {
+    ed.busy = false;
+    ed.msg = errorBlock(err);
+    drawEditor();
+  }
+}
+
+async function regenAudio(ed) {
+  ed.msg = "正在合成语音…";
+  drawEditor();
+  try {
+    const r = await api("/api/examples/" + ed.exampleId + "/audio", { method: "POST" });
+    ed.audio_path = r.audio_path;
+    ed.msg = "语音好了（" + r.audio_path + "）。";
+    playAudio(r.audio_path);
+  } catch (err) {
+    ed.msg = errorBlock(err);
+  }
+  drawEditor();
+  refreshAfterEdit(ed);
+}
+
+async function regenImage(ed) {
+  ed.msg = "正在配图…（「检索 + 画图 并行」，可能要十几秒）";
+  drawEditor();
+  try {
+    const r = await api("/api/examples/" + ed.exampleId + "/image", { method: "POST" });
+    ed.draft.scene_image = r.scene_image;
+    ed.msg = "配好了：" + r.scene_image;
+  } catch (err) {
+    ed.msg = errorBlock(err);
+  }
+  drawEditor();
+  refreshAfterEdit(ed);
+}
+
+// 手动贴一个图片地址。
+//
+// 这是配图那条链路上最后的兜底：图库搜不到、模型画不好、或者用户
+// 心里正好有一张合适的图 —— 三种情况都该有个地方把地址填进去。
+// 只接受 http(s)，且**不下载**：存 URL 而不是存文件，用户换图零成本。
+async function useImageUrl(ed) {
+  const node = $("#ed-img");
+  const url = node ? node.value.trim() : "";
+  if (!url) {
+    ed.msg = "先在上面填一个图片地址。";
+    drawEditor();
+    return;
+  }
+  if (!/^https?:\/\//i.test(url)) {
+    ed.msg = "只接受 http:// 或 https:// 开头的地址。";
+    drawEditor();
+    return;
+  }
+  ed.draft.scene_image = url;
+  try {
+    await api("/api/examples/" + ed.exampleId, {
+      method: "PATCH", body: JSON.stringify({ scene_image: url }),
+    });
+    ed.msg = "用上这个地址了。";
+  } catch (err) {
+    ed.msg = errorBlock(err);
+  }
+  drawEditor();
+  refreshAfterEdit(ed);
+}
+
+async function deleteEditingExample(ed) {
+  const ok = window.confirm(
+    "删掉这条例句和它的五张卡？\n\n复习进度会一起没有，而且不能撤销。"
+    + "如果只是想暂时不看到它，请用「暂停这张卡」。"
+  );
+  if (!ok) return;
+  try {
+    const r = await api("/api/examples/" + ed.exampleId, { method: "DELETE" });
+    closeEditor();
+    setBanner("ok", "删掉了这条例句和它的 " + r.deleted_cards + " 张卡。");
+    loadQueue();
+  } catch (err) {
+    ed.msg = errorBlock(err);
+    drawEditor();
+  }
+}
+
+// 编辑完之后，把当前页面的数据重新拉一遍。
+// 不重新拉的话，界面上还是改之前的内容 —— 用户会以为没保存成功。
+async function refreshAfterEdit(ed) {
+  try {
+    if (state.view === "study" && state.current && state.current.card.id === ed.cardId) {
+      const fresh = await api("/api/cards/" + ed.cardId);
+      state.current = fresh;
+      render();
+    } else if (state.view === "cards") {
+      loadBrowser();
+    } else if (state.view === "lessons" && state.openLesson) {
+      await openLesson(state.openLesson);
+    }
+  } catch (err) { /* 刷新失败不该盖住刚才那句成功提示 */ }
+  refreshCounts();
+}
+
+// ------------------------------------------------------------------ 键盘
 // 快捷键要么和侧边栏里写的一致，要么就别写在那儿。
-// 这里的每一档都走 grade() —— 跟鼠标点是**同一个函数**，
-// 所以不可能再出现「键盘能按、鼠标不能按」这种不一致。
+// 这里的每一档都走和鼠标**同一个函数**，所以不可能再出现
+// 「键盘能按、鼠标不能按」这种不一致。
 function handleKeys(e) {
+  // 抽屉开着的时候，键盘归抽屉管（Esc 关闭，其余交给输入框）。
+  if (state.editing) {
+    if (e.key === "Escape") { e.preventDefault(); closeEditor(); }
+    return;
+  }
   if (state.view !== "study") return;
   const tag = (e.target && e.target.tagName) || "";
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (!state.current || state.cursor >= state.queue.length) return;
 
+  // 上/下一张和撤销不依赖「当前有没有卡」，所以放在前面。
+  if (e.key === "ArrowLeft") { e.preventDefault(); prevCard(); return; }
+  if (e.key === "ArrowRight") { e.preventDefault(); nextCard(); return; }
+  if (e.key === "z" || e.key === "Z") { e.preventDefault(); undoLastGrade(); return; }
+  if ((e.key === "e" || e.key === "E") && state.current) {
+    e.preventDefault();
+    openEditor(state.current);
+    return;
+  }
+
+  if (!state.current || state.cursor >= state.queue.length) return;
   const channel = state.current.card ? state.current.card.channel : "";
 
   // 打字卡：Enter 先提交比对。已经在输入框里按 Enter 的那条由输入框自己处理。
@@ -2869,6 +4347,7 @@ function render() {
   clear(main);
 
   if (state.view === "study") renderStudy(main);
+  else if (state.view === "cards") renderCards(main);
   else if (state.view === "lessons") renderLessons(main);
   else if (state.view === "plans") renderPlans(main);
   else renderSettings(main);
@@ -2877,45 +4356,116 @@ function render() {
   renderSideActions();
   refreshCounts();
   paintIcons();
+
+  // 抽屉挂在 body 上，不在 #app 里，所以重绘 #app 不会带上它。
+  // 后果不只是「慢一拍」：**改外观的那个开关就在抽屉里**，
+  // 用户在抽屉里点「进阶」，画面纹丝不动 —— 典型的点了没反应。
+  // drawEditor() 本身先 clear 再画，重复调用是安全的。
+  if (state.editing) drawEditor();
 }
 
 // -------------------------------------------------------------- 启动
 
-function paintTheme() {
+// ------------------------------------------------------- 外观（主题/字号）
+
+// 三套主题 + 跟随系统。**「跟随系统」不是一个第四套配色**，
+// 它只是把「用哪套」的决定权交给操作系统 —— 所以 data-theme 直接
+// 不设为 dark/light/warm，让 CSS 里那条 prefers-color-scheme 生效。
+//
+// 这个区分很重要：0.0.2 只有「跟随系统」和「手动深/浅」两种状态，
+// 结果是「我白天想要暖白、晚上跟着系统变深色」这种需求表达不出来。
+const THEMES = [
+  { id: "auto", label: "跟随系统", what: "白天暖白，系统切到深色时跟着变" },
+  { id: "warm", label: "暖白 · 护眼", what: "米黄底、暖灰字，长时间看不累（默认）" },
+  { id: "light", label: "冷白 · 清晰", what: "纯白底，对比更利落，适合白天光线足时" },
+  { id: "dark", label: "深色 · 夜间", what: "暖调深灰，不是纯黑，夜里不刺眼" },
+];
+
+const SIZES = [
+  { id: "s", label: "小", what: "一屏看更多" },
+  { id: "m", label: "标准", what: "默认" },
+  { id: "l", label: "大", what: "字号和行距一起放大" },
+];
+
+function currentTheme() {
   const set = document.documentElement.getAttribute("data-theme");
-  const dark = set ? set === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  return THEMES.filter((t) => t.id === set)[0] ? set : "auto";
+}
+
+// 现在实际显示的是深色还是浅色（用于选图标）。「自动」要问系统。
+function effectiveDark() {
+  const theme = currentTheme();
+  if (theme === "auto") return matchMedia("(prefers-color-scheme: dark)").matches;
+  return theme === "dark";
+}
+
+function applyLook() {
+  const root = document.documentElement;
+  // 自动时不写属性 —— 写了反而会盖掉 CSS 里的媒体查询。
+  if (state.theme === "auto") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", state.theme);
+  root.setAttribute("data-size", state.fontSize || "m");
+
   const node = $("#theme");
-  if (!node) return;
-  clear(node);
-  node.appendChild(icon(dark ? "sun" : "moon", 16));
-  node.title = dark ? "切到浅色" : "切到深色";
+  if (node) {
+    clear(node);
+    node.appendChild(icon(effectiveDark() ? "sun" : "moon", 16));
+    node.title = "换一个配色（当前：" + (
+      (THEMES.filter((t) => t.id === state.theme)[0] || THEMES[0]).label
+    ) + "）";
+  }
+}
+
+// 侧边栏那个按钮在四套之间轮转。要改具体某套去「设置 → 界面」——
+// 一个图标按钮最多只能表达「下一个」。
+function cycleTheme() {
+  const order = THEMES.map((t) => t.id);
+  const at = order.indexOf(state.theme);
+  setLook({ theme: order[(at + 1) % order.length] });
+}
+
+function setLook(patch) {
+  if (patch.theme) state.theme = patch.theme;
+  if (patch.fontSize) state.fontSize = patch.fontSize;
+  if (patch.density) state.density = patch.density;
+  try {
+    localStorage.setItem("etude-theme", state.theme);
+    localStorage.setItem("etude-size", state.fontSize);
+    localStorage.setItem("etude-density", state.density);
+  } catch (e) { /* 隐私模式写不了，忽略 */ }
+  applyLook();
+  render();
 }
 
 async function boot() {
-  // 主题：跟随系统，用户手动选过就听用户的。
-  let saved = null;
-  try { saved = localStorage.getItem("etude-theme"); } catch (e) { /* 隐私模式 */ }
-  if (saved) document.documentElement.setAttribute("data-theme", saved);
+  // 外观三件套：主题、字号、界面密度。都存在本地，重开还是这套。
+  //
+  // 兼容 0.0.2 留下的老值（那边只存 "dark" / "light" 两个值，
+  // 而且**没有** "auto"）。老值直接就是新表里的 id，所以不用转换；
+  // 只是那时候「没存过」等于跟随系统，这里同理 —— 缺省就用 auto。
+  try {
+    const savedTheme = localStorage.getItem("etude-theme");
+    if (savedTheme && THEMES.some((t) => t.id === savedTheme)) state.theme = savedTheme;
+    const savedSize = localStorage.getItem("etude-size");
+    if (SIZES.some((s) => s.id === savedSize)) state.fontSize = savedSize;
+    const savedDensity = localStorage.getItem("etude-density");
+    if (savedDensity === "advanced" || savedDensity === "simple") state.density = savedDensity;
+    state.sideCollapsed = localStorage.getItem("etude-side") === "collapsed";
+  } catch (e) { /* 隐私模式 */ }
 
-  let side = null;
-  try { side = localStorage.getItem("etude-side"); } catch (e) { /* 同上 */ }
-  state.sideCollapsed = side === "collapsed";
-
-  paintTheme();
+  applyLook();
   applySide();
   paintIcons();
 
   const themeBtn = $("#theme");
-  if (themeBtn) {
-    themeBtn.addEventListener("click", () => {
-      const set = document.documentElement.getAttribute("data-theme");
-      const dark = set ? set === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-      const next = dark ? "light" : "dark";
-      document.documentElement.setAttribute("data-theme", next);
-      try { localStorage.setItem("etude-theme", next); } catch (e) { /* 忽略 */ }
-      paintTheme();
+  if (themeBtn) themeBtn.addEventListener("click", cycleTheme);
+
+  // 系统主题变了、而用户选的是「跟随系统」时，图标要跟着换。
+  try {
+    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+      if (state.theme === "auto") applyLook();
     });
-  }
+  } catch (e) { /* 老浏览器没有 addEventListener 版本，忽略 */ }
 
   const collapse = $("#collapse");
   if (collapse) collapse.addEventListener("click", toggleSide);

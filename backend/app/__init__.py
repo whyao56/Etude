@@ -28,5 +28,5 @@ for _var in (
     _os.environ.setdefault(_var, "1")
 del _var, _os
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 __all__ = ["__version__"]

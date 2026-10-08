@@ -134,6 +134,81 @@ async function main() {
     await scrollToCard(browser, "数据");
     made.push(await browser.screenshot(path.join(OUT, "14-settings-data.png")));
 
+    // ---- 15 卡片浏览页（0.0.3 的「老手调控」）----
+    // 这张图负责说明「Anki 式灵活度」到底长什么样：能筛、能翻页、
+    // 能勾选一批一起处理。没有这张图的话，「支持批量调整」只能靠嘴说。
+    await browser.goto(`${BASE}/#cards`);
+    await browser.evaluate("setView('cards')");
+    await browser.waitFor(
+      "document.querySelectorAll('table.browser tbody tr').length > 0", "卡片列表");
+    made.push(await browser.screenshot(path.join(OUT, "15-cards-browser.png")));
+
+    // ---- 16 / 17 卡片编辑器：简易 与 进阶 ----
+    // **两档都要拍。** 只拍进阶的话，README 看起来像个只给 SRS 老手的工具；
+    // 只拍简易的话，「老手能手动调间隔」这件事又没了证据。
+    // 同一件事的两面，一张图各说一半都会骗人。
+    await openLessonList(browser);
+    await openFirstLesson(browser);
+    await browser.evaluate(`
+      (() => {
+        const first = document.querySelectorAll('.example')[0];
+        const btn = [...first.querySelectorAll('.chanbtns button')]
+          .find(b => b.textContent.trim() === '编辑');
+        if (!btn) throw new Error('找不到「编辑」按钮');
+        btn.click();
+        return true;
+      })()
+    `);
+    await browser.waitFor("!!document.querySelector('.drawer')", "卡片编辑器");
+
+    await browser.evaluate("setLook({ density: 'simple' })");
+    await sleep(500);
+    made.push(await browser.screenshot(path.join(OUT, "16-card-editor-simple.png")));
+
+    await browser.evaluate("setLook({ density: 'advanced' })");
+    // 改密度会顺手重画背后的详情页（要重新取一次这个包），等它回来。
+    await browser.waitFor(
+      "document.querySelectorAll('.example').length > 0", "重画之后的例句列表");
+    made.push(await browser.screenshot(path.join(OUT, "17-card-editor-advanced.png")));
+
+    await browser.evaluate("closeEditor()");
+    await sleep(400);
+
+    // ---- 18 / 19 / 20 三套配色 ----
+    // 三套都要有。只放深色的话，用户会以为这是个深色工具 ——
+    // 而默认的那套其实是「暖白 · 护眼」，用户反馈的那条也正是冲它来的。
+    //
+    // 编号写死成一张表，不用 ``"1" + (8 + i)`` 这类算术 ——
+    // 那个算法在 i=2 时会产出 `110`，文件名就成了
+    // `110-theme-dark.png`，排在 11 后面，肉眼几乎看不出错。
+    const THEME_SHOTS = [
+      ["18-theme-warm", "warm"],
+      ["19-theme-light", "light"],
+      ["20-theme-dark", "dark"],
+    ];
+    await browser.evaluate("setLook({ density: 'simple' })");
+    for (const [name, theme] of THEME_SHOTS) {
+      await browser.setTheme(theme);
+      // 刷新之后 hash 还是 #lessons，而 openLesson 已经没了（那是内存里的状态）——
+      // 显式回训练页，保证三张图拍的是同一处界面。
+      await browser.evaluate("state.openLesson = null; setView('study')");
+      // 队列要重新拉一次。只 sleep 的话，慢机器上会拍到一个空壳 ——
+      // 而这种图看起来最可信，也最容易骗到人。
+      await browser.waitFor(
+        "!!document.querySelector('.stage .chan')", `${theme} 配色下的卡片`, 20000);
+      // 中文场景说法是**随机挑一条**的（`pickZh`）。不固定的话，
+      // 三张并排的配色图会显示三段不同的中文 —— 读起来像三张不同的卡，
+      // 而这几张图要说明的恰恰是「同一屏，三种皮肤」。
+      // 固定随机数之后重画一次，让三张图逐字可比。
+      // 注意：必须在 reload **之后**设，reload 会把页面里的覆盖清掉。
+      await browser.evaluate("Math.random = () => 0.42; render();");
+      await sleep(250);
+      made.push(await browser.screenshot(path.join(OUT, `${name}.png`)));
+    }
+    // 还原成文档主用的那套，免得后续再跑别的脚本时状态不对。
+    await browser.setTheme(THEME);
+    await sleep(400);
+
     console.log(`生成了 ${made.length} 张截图（主题：${THEME}，${WIDTH}×${HEIGHT}）：`);
     for (const file of made) console.log("  " + path.relative(process.cwd(), file));
 

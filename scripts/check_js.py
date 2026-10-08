@@ -50,6 +50,8 @@ BUILTINS = {
     "encodeURIComponent", "decodeURIComponent", "encodeURI", "decodeURI",
     "parseInt", "parseFloat", "isNaN", "isFinite", "structuredClone",
     "matchMedia", "getComputedStyle", "Audio", "Image", "FileReader",
+    # 系统语音朗读（例句没有生成音频时的兜底）。见 index.html 的 speakText()。
+    "SpeechSynthesisUtterance",
     "Blob", "URL", "URLSearchParams", "AbortController", "TextEncoder",
     "TextDecoder", "localStorage", "sessionStorage", "Intl", "PerformanceObserver",
 }

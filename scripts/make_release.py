@@ -142,6 +142,46 @@ def call(method: str, url: str, tok: str, data: dict | None = None) -> tuple[int
             return exc.code, {"message": payload[:400]}
 
 
+def assert_dist_version(dist: Path, tag_version: str) -> None:
+    """确认要打进去的产物**真的是这个版号**。
+
+    这道闸是踩出来的：``dist/`` 下留着一个上次构建的目录时，
+    ``newest_output()`` 会老老实实挑它（它确实是最新的），
+    于是 0.0.3 的 zip 里装的是 0.0.2 的前端 —— 打包、算校验和、
+    上传全部成功，只有**内容**是错的。这类「标签对、内容错」的发版
+    比打包失败糟得多：没人会去怀疑它。
+
+    判据直接取冻结产物里的前端版本常量。不拿 ``build/size-baseline.json``
+    当判据 —— 那个文件记的是「上次构建出过什么版本」，而这里要问的是
+    「马上要发出去的这个目录是什么版本」。两者不是一回事。
+    """
+    marker = None
+    for candidate in (
+        dist / "_internal" / "frontend" / "index.html",
+        dist / "frontend" / "index.html",
+    ):
+        if candidate.is_file():
+            marker = candidate
+            break
+    if marker is None:
+        raise SystemExit(
+            f"{dist} 里找不到 frontend/index.html，没法确认这个产物的版本。\n"
+            "重跑一次 scripts/build_exe.py。"
+        )
+    match = re.search(r'const\s+APP_VERSION\s*=\s*"([^"]+)"', marker.read_text(encoding="utf-8"))
+    if not match:
+        raise SystemExit(f"{marker} 里找不到 APP_VERSION。")
+    if match.group(1) != tag_version:
+        raise SystemExit(
+            f"产物里的前端是 {match.group(1)}，而你要发的是 {tag_version}。\n"
+            f"  产物目录：{dist}\n"
+            "这是残留的旧构建 —— dist/ 下每个目录都是某一次构建的快照，"
+            "「最新的那个」不一定是「你要发的那个」。\n"
+            "先重跑 scripts/build_exe.py，再打包。"
+        )
+    print(f"      产物版本核对通过：{tag_version}")
+
+
 def make_zip(tag_version: str, repo: str, dist: Path | None = None) -> Path:
     """把打包产物打成一个 zip，内含使用说明。
 
@@ -155,6 +195,8 @@ def make_zip(tag_version: str, repo: str, dist: Path | None = None) -> Path:
     dist = dist or products.newest_output()
     if dist is None or not dist.is_dir():
         raise SystemExit(products.describe_dist() + "\n先跑 scripts/build_exe.py。")
+
+    assert_dist_version(dist, tag_version)
 
     zip_path = ROOT / "dist" / f"Etude-{tag_version}-win64.zip"
     if zip_path.exists():

@@ -306,6 +306,6 @@ def test_an_old_config_file_gets_the_new_sections(isolated_data):
 
     loaded = config.load()
     assert loaded["llm"]["model"] == "my-old-model", "老设置不能被默认值盖掉"
-    assert loaded["images"]["source"] in {"search", "llm", "off"}
+    assert loaded["images"]["source"] in {"both", "search", "llm", "off"}
     assert "llm" in loaded["images"]
     assert isinstance(loaded["study"].get("plan_default_count"), int)

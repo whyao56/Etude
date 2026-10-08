@@ -255,21 +255,23 @@ def _make_audio(
     """逐条合成语音。**失败只记不抛** —— 另外几条还能练。"""
     audio: dict[int, str] = {}
     total = len(examples)
+    voice = tts.resolve_voice(tts_cfg)
     for i, ex in enumerate(examples):
         _set_job(key, step=f"正在合成第 {i + 1}/{total} 条语音", done=i, total=total)
         try:
-            audio[i] = tts.synthesize(
-                ex["sentence"],
-                engine=tts_cfg.get("engine", "edge"),
-                voice=tts_cfg.get("voice", "en-US-AriaNeural"),
-                rate=tts_cfg.get("rate", "+0%"),
-                volume=tts_cfg.get("volume", "+0%"),
-                openai_cfg=tts_cfg.get("openai", {}),
-            )
-            ex["audio_voice"] = tts_cfg.get("voice", "")
+            audio[i] = tts.synthesize_cfg(ex["sentence"], tts_cfg)
+            ex["audio_voice"] = voice
         except Exception as exc:  # noqa: BLE001
             failures.append(f"语音 · {ex['sentence'][:40]}…：{exc}")
     return audio
+
+
+# 配图进度条上的一句附注。``both`` 那句是有用的：用户在界面上看到
+# 「并行」就会知道这一步在同时跑两条路，卡住几秒是正常的。
+_IMAGE_STEP_NOTE = {
+    "llm": "（模型生成，较慢）",
+    "both": "（检索与画图并行，先到先用）",
+}
 
 
 def _make_images(
@@ -299,8 +301,7 @@ def _make_images(
             continue
         _set_job(
             key,
-            step=f"正在配第 {i + 1}/{budget} 张场景图"
-                 + ("（模型生成，较慢）" if source == "llm" else ""),
+            step=f"正在配第 {i + 1}/{budget} 张场景图" + _IMAGE_STEP_NOTE.get(source, ""),
             done=i,
             total=budget,
         )
@@ -484,6 +485,66 @@ def prompts_build(cfg: dict, lesson: dict, want: int) -> list[dict]:
     )
 
 
+def make_example_audio(example_id: int, failures: list[str], *, force: bool = False) -> str:
+    """给**一条**例句合成语音。返回文件名，失败时返回空串并往 failures 里写一条。
+
+    和 ``regenerate_audio``（整包补）分开写，而不是让它循环调用一次 ——
+    后者会把「一条失败」和「这个包该不该标成缺语音」两件事搅在一起，
+    而手工加的例句需要的恰恰是「只动这一条，别碰别的」。
+    """
+    ex = db.example_by_id(example_id)
+    if ex is None:
+        return ""
+    if ex.get("audio_path") and not force:
+        return ex["audio_path"]
+    cfg = config.load()["tts"]
+    try:
+        name = tts.synthesize_cfg(ex["sentence"], cfg)
+    except Exception as exc:  # noqa: BLE001 — 和别处一样：失败只记不抛
+        failures.append(f"语音 · {ex['sentence'][:40]}…：{exc}")
+        return ""
+    db.execute(
+        "UPDATE examples SET audio_path = ?, audio_voice = ? WHERE id = ?",
+        (name, tts.resolve_voice(cfg), example_id),
+    )
+    return name
+
+
+def make_example_image(example_id: int, failures: list[str], *, force: bool = False) -> str:
+    """给**一条**例句配场景图。配图来源是 ``off`` 时直接返回空串。"""
+    ex = db.example_by_id(example_id)
+    if ex is None:
+        return ""
+    if ex.get("scene_image") and not force:
+        return ex["scene_image"]
+
+    img_cfg = config.load().get("images", {})
+    source = (img_cfg.get("source") or "off").strip()
+    if source in ("off", "none", ""):
+        return ""
+
+    query = images_mod.build_query(ex.get("scene_en", ""), ex.get("sentence", ""))
+    prompt = images_mod.build_prompt(ex.get("scene_en", ""), ex.get("sentence", ""))
+    if not query and not prompt:
+        return ""
+    try:
+        name = images_mod.provide(
+            query=query, prompt=prompt, source=source,
+            gen_cfg=dict(img_cfg.get("llm") or {}),
+            timeout=float(img_cfg.get("timeout", 45.0)),
+            force=force,
+        )
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"配图 · {ex.get('sentence', '')[:40]}…：{exc}")
+        return ""
+
+    db.execute(
+        "UPDATE examples SET scene_image = ?, image_query = ? WHERE id = ?",
+        (name, query, example_id),
+    )
+    return name
+
+
 def regenerate_audio(lesson_id: int) -> dict:
     """只补音频，不动例句。给「上次语音合成失败」留的补救入口。"""
     cfg = config.load()
@@ -493,20 +554,14 @@ def regenerate_audio(lesson_id: int) -> dict:
     _set_job(key, status="running", step="正在补语音", done=0, total=len(examples))
 
     ok, failed = 0, []
+    voice = tts.resolve_voice(tts_cfg)
     for i, ex in enumerate(examples):
         _set_job(key, step=f"正在补第 {i + 1}/{len(examples)} 条", done=i)
         try:
-            name = tts.synthesize(
-                ex["sentence"],
-                engine=tts_cfg.get("engine", "edge"),
-                voice=tts_cfg.get("voice", "en-US-AriaNeural"),
-                rate=tts_cfg.get("rate", "+0%"),
-                volume=tts_cfg.get("volume", "+0%"),
-                openai_cfg=tts_cfg.get("openai", {}),
-            )
+            name = tts.synthesize_cfg(ex["sentence"], tts_cfg)
             db.execute(
                 "UPDATE examples SET audio_path = ?, audio_voice = ? WHERE id = ?",
-                (name, tts_cfg.get("voice", ""), ex["id"]),
+                (name, voice, ex["id"]),
             )
             ok += 1
         except Exception as exc:  # noqa: BLE001

@@ -331,10 +331,18 @@ def test_an_oversized_picture_is_refused(fake_net, isolated_data):
     assert "太大" in str(info.value)
 
 
-def test_catalog_lists_the_three_sources(isolated_data):
-    """界面的下拉框直接读这里 —— 少一个，用户就少一条出路。"""
+def test_catalog_lists_every_source(isolated_data):
+    """界面的下拉框直接读这里 —— 少一个，用户就少一条出路。
+
+    （这个用例原来叫 ``..._the_three_sources``。0.0.3 加了 ``both``
+    之后名字就不对了 —— 名字和断言对不上比没名字更糟，
+    下次读到它的人会以为这里只该有三个。）
+    """
     from app.providers.images import IMAGE_SOURCES, source_catalog
 
     ids = {s["id"] for s in IMAGE_SOURCES}
-    assert ids == {"search", "llm", "off"}
+    # both 是 0.0.3 加的：检索和画图并行，互为兜底。它必须排在第一个 ——
+    # 界面上「第一个就是默认值」，而它确实该是默认值。
+    assert ids == {"both", "search", "llm", "off"}
+    assert IMAGE_SOURCES[0]["id"] == "both"
     assert set(source_catalog()) == {"sources", "presets"}

@@ -17,7 +17,7 @@
 
 ## A. 下载 exe
 
-1. 打开 [Releases](https://github.com/whyao56/Etude/releases)，下 `Etude-0.0.2-win64.zip`
+1. 打开 [Releases](https://github.com/whyao56/Etude/releases)，下 `Etude-0.0.3-win64.zip`
 2. **解压整个文件夹**（别在压缩包里双击）
 3. 双击 `Etude.exe`
 
@@ -337,5 +337,5 @@ python ../scripts/make_release.py --check
 
 `6` 的 `--check` 只打包、打印 SHA256、**不上传**。
 真发版去掉 `--check`，但它会拦住你 ——
-如果 `docs/releases/v0.0.2.md` 里没印这个包的 SHA256，
+如果 `docs/releases/v0.0.3.md` 里没印这个包的 SHA256，
 脚本会拒绝发布（发行说明和产物对不上，就是「文档说谎」的经典症状）。

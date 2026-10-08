@@ -54,6 +54,39 @@ def cache_name(engine: str, voice: str, text: str, rate: str = "+0%") -> str:
     return f"{engine}-{digest}.mp3"
 
 
+def resolve_voice(cfg: dict) -> str:
+    """从整段 tts 配置里取出**这个引擎真正要用的那个音色**。
+
+    这里踩过一个很贵的坑，写下来免得再犯：
+
+    配置里有两个音色字段 —— ``tts.voice`` 是 Edge 的音色（``en-US-AriaNeural``），
+    ``tts.openai.voice`` 是大模型端点的音色（``alloy``）。它们是**两套命名**，
+    互不通用。而合成、补语音、试听三条路径原本都只读 ``tts.voice``，
+    于是用户一切到「大模型语音」，程序就会把 ``en-US-AriaNeural``
+    发给 ``/audio/speech``：
+
+      · OpenAI 官方 → 400 ``Invalid voice``
+      · 豆包 / 硅基流动 → 同样报参数错
+
+    每一条语音都失败，而失败只写进日志（界面上是一次静默的「全包没声音」）。
+    用户看到的现象就是「例句读不出来」，而且**设置页看着一切正常**——
+    因为自检当时只 ``import edge_tts`` 就算过了，试听走的又是同一条错路径。
+
+    所以：音色必须按引擎取，取法只能有这一个地方。
+    """
+    engine = (cfg.get("engine") or "edge").strip().lower()
+    if engine == "openai":
+        sub = cfg.get("openai") or {}
+        voice = (sub.get("voice") or "").strip()
+        return voice or OPENAI_VOICES[0]
+    return (cfg.get("voice") or "").strip() or "en-US-AriaNeural"
+
+
+def needs_key(cfg: dict) -> bool:
+    """这个引擎要不要密钥。给设置页和自检共用，避免两边各判一次。"""
+    return (cfg.get("engine") or "edge").strip().lower() == "openai"
+
+
 def synthesize(
     text: str,
     *,
@@ -179,18 +212,36 @@ def _is_local(base_url: str) -> bool:
     return host.lower() in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
 
-def check(*, engine: str = "edge", voice: str = "en-US-AriaNeural",
-          openai_cfg: dict | None = None, timeout: float = 30.0) -> dict:
-    """设置页的「测试语音」。合成一小段并立刻删掉缓存文件。"""
-    probe = "This is a short test."
-    name = synthesize(
-        probe,
-        engine=engine,
-        voice=voice,
-        openai_cfg=openai_cfg,
+def synthesize_cfg(text: str, cfg: dict, *, timeout: float = 60.0, force: bool = False) -> str:
+    """按整段 tts 配置合成一条语音。**训练包生成走这条。**
+
+    存在意义和 :func:`check` 一样：调用方只交出配置，不自己挑音色。
+    三处调用点（生成训练包、补语音、试听）以前各自写一遍取音色的逻辑，
+    于是三处一起错。现在只剩一个地方会错。
+    """
+    return synthesize(
+        text,
+        engine=(cfg.get("engine") or "edge").strip().lower(),
+        voice=resolve_voice(cfg),
+        rate=cfg.get("rate", "+0%"),
+        volume=cfg.get("volume", "+0%"),
+        openai_cfg=cfg.get("openai", {}),
         timeout=timeout,
-        force=True,
+        force=force,
     )
+
+
+def check(cfg: dict, *, timeout: float = 30.0) -> dict:
+    """设置页的「试听一句」和自检共用。
+
+    传的是**整段 tts 配置**而不是零散的 engine / voice —— 理由见
+    :func:`resolve_voice`：只要还允许调用方自己挑音色，就一定会有人挑错。
+    音色的决定权在配置里，不在这里。
+    """
+    probe = "This is a short test."
+    engine = (cfg.get("engine") or "edge").strip().lower()
+    voice = resolve_voice(cfg)
+    name = synthesize_cfg(probe, cfg, timeout=timeout, force=True)
     path = audio_dir() / name
     size = path.stat().st_size if path.exists() else 0
     return {"ok": True, "engine": engine, "voice": voice, "bytes": size}
@@ -202,6 +253,9 @@ __all__ = [
     "TTSError",
     "cache_name",
     "check",
+    "needs_key",
+    "resolve_voice",
     "synthesize",
+    "synthesize_cfg",
     "voice_catalog",
 ]

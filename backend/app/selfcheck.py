@@ -138,22 +138,51 @@ def run(*, deep: bool = False) -> dict:
             items.append(_item("大模型", "ok", detail))
 
     # ⑤ 语音引擎。
-    try:
-        import edge_tts  # noqa: F401
+    #
+    # 这一段 0.0.3 重写过。原来的实现只 `import edge_tts` 就算通过 ——
+    # 于是「语音根本合不出来」这种最要紧的故障，自检报告上是绿的。
+    # 用户看到的现象是「例句读不出来」，跑来问「检查一下问题」，
+    # 而程序自己坚称一切正常。自检的存在意义就是不出现这种事。
+    #
+    # 现在分两层：
+    #   · 静态层（随时跑）：报告**实际会用的音色**。音色取错是 0.0.2
+    #     那个「整包静音」bug 的形态，把名字打出来就能一眼看见。
+    #   · 动态层（deep 时）：真的合成一句 3 个词的短文。这条能抓住
+    #     网络不通、密钥不对、音色名端点不认、额度用完。
+    tts_cfg = cfg["tts"]
+    from .providers import tts
 
-        items.append(
-            _item("语音引擎", "ok", f"edge-tts · 默认音色 {cfg['tts'].get('voice')}")
-        )
-    except ImportError as exc:
+    engine = (tts_cfg.get("engine") or "edge").strip().lower()
+    voice = tts.resolve_voice(tts_cfg)
+    label = "Edge 语音" if engine != "openai" else "大模型语音"
+    detail = f"{label} · 音色 {voice}"
+
+    if engine != "openai":
+        try:
+            import edge_tts  # noqa: F401
+        except ImportError as exc:
+            items.append(
+                _item(
+                    "语音引擎",
+                    "fail",
+                    f"缺少 edge-tts：{exc}",
+                    "这不是网络问题，重试修不好。请重新安装完整发行包，"
+                    "或者把语音引擎切到「大模型语音」。",
+                )
+            )
+        else:
+            items.append(_deep_audio_item(tts_cfg, detail, deep=deep))
+    elif not ((tts_cfg.get("openai") or {}).get("api_key") or "").strip():
         items.append(
             _item(
                 "语音引擎",
-                "fail",
-                f"缺少 edge-tts：{exc}",
-                "这不是网络问题，重试修不好。请重新安装完整发行包，"
-                "或者把语音引擎切到「大模型语音」。",
+                "warn",
+                detail + " · 还没填密钥",
+                "去「设置 → 语音」填上密钥，然后点「试听一句」验一下。",
             )
         )
+    else:
+        items.append(_deep_audio_item(tts_cfg, detail, deep=deep))
 
     # ⑥ 原生窗口。这一项存在的理由很具体：用户报「双击没反应」时，
     #    最常见的原因就是这台机器缺 WebView2 运行时。
@@ -214,6 +243,40 @@ def _source_label(source: str) -> str:
     }.get(source, source)
 
 
+def _deep_audio_item(tts_cfg: dict, detail: str, *, deep: bool) -> dict:
+    """语音那一项的「真的合成一段试试」分支。
+
+    探针特意选 ``This is a test.`` 这种短句 —— 它足够触发音色合法性和
+    密钥校验（这两件事在发请求之前/之后立刻就被驳回），又便宜到
+    可以在每次 ``--check`` 里跑。**不测长句**：这里的目的是回答
+    「到底出不出得了声」，不是压测。
+    """
+    from .providers import tts
+
+    if not deep:
+        return _item(
+            "语音引擎",
+            "ok",
+            detail + " · 没实测（加 --deep 会真的合成一句）",
+        )
+
+    try:
+        result = tts.check(tts_cfg, timeout=25.0)
+    except Exception as exc:  # noqa: BLE001 - 自检必须全接住
+        hint = getattr(exc, "hint", "")
+        return _item(
+            "语音引擎",
+            "fail",
+            f"{detail} · 出不了声：{str(exc)[:160]}",
+            hint or "点「设置 → 语音 → 试听一句」复现一次，报错会更完整。",
+        )
+    return _item(
+        "语音引擎",
+        "ok",
+        f"{detail} · 实测出声 {result['bytes']} 字节",
+    )
+
+
 def _image_item(cfg: dict) -> dict:
     """场景配图的配置和缓存。
 
@@ -232,22 +295,40 @@ def _image_item(cfg: dict) -> dict:
     if source == "off":
         return _item("场景配图", "ok", f"已关闭 · 缓存里还有 {count} 张")
 
-    if source == "llm":
+    if source in ("llm", "both"):
         gen = images_cfg.get("llm") or {}
-        if not (gen.get("base_url") or "").strip() or not (gen.get("model") or "").strip():
+        ready = bool((gen.get("base_url") or "").strip() and (gen.get("model") or "").strip())
+
+        if source == "both":
+            # both 模式下画图没配好**不是问题**：检索那一路照常工作，
+            # 画图只是那个「检索失败时的兜底」暂时缺席。报 warn 会让
+            # 用户以为自己少配了什么必需的东西 —— 他不是。
+            if ready and (gen.get("api_key") or "").strip():
+                return _item(
+                    "场景配图", "ok",
+                    f"检索 + 画图 并行 · 两条路都配好了 · 缓存 {count} 张",
+                )
+            return _item(
+                "场景配图", "ok",
+                f"检索 + 画图 并行 · 画图那路还没配好，目前只有检索 · 缓存 {count} 张",
+                "想要兜底更稳可以补上「设置 → 场景配图」的 base_url / 模型名，"
+                "不补也能正常配图。",
+            )
+
+        if not ready:
             return _item(
                 "场景配图",
                 "warn",
                 f"选了「用模型画图」但还没配好 · 缓存里 {count} 张",
                 "去「设置 → 场景配图」填 base_url 和模型名，"
-                "或者把来源改回「从开放图库检索」（免费、不需要配置）。",
+                "或者把来源改成「检索 + 画图 并行」（推荐）。",
             )
         if not (gen.get("api_key") or "").strip():
             return _item(
                 "场景配图",
                 "warn",
                 f"{gen.get('base_url')} · {gen.get('model')} · 还没填密钥",
-                "画图要密钥。填上，或者改回「从开放图库检索」。",
+                "画图要密钥。填上，或者改成「检索 + 画图 并行」让检索兜底。",
             )
         return _item("场景配图", "ok", f"用模型画图 · {gen.get('model')} · 缓存 {count} 张")
 

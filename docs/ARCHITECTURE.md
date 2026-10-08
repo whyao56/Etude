@@ -102,8 +102,19 @@ plans ──── lessons ──┬── examples ──┬── cards ──
 | `lessons` | 一个训练包 | `target`（用户输入的那个词/句）、`kind`、`status`、`error`、`language`、`plan_id`(0 = 不属于任何计划) |
 | `examples` | 一条例句 | `sentence`、`scene_en`、`scene_zh`、`zh_variants`(JSON)、`audio_path`、`audio_voice`、`scene_image`、`image_query`(JSON) |
 | `swaps` | 一组换词候选 | `role`(主/谓/宾)、`original`、`candidates`(JSON)、`samples`(JSON) |
-| `cards` | 一张卡 = (例句, 通道) | `due_at`、`interval`、`ease`、`reps`、`lapses`、`introduced` |
-| `reviews` | 一次评分 | `card_id`、`grade`、`seconds`、`at` |
+| `cards` | 一张卡 = (例句, 通道) | `due_at`、`interval`、`ease`、`reps`、`lapses`、`introduced`、`suspended`(0.0.3) |
+| `reviews` | 一次评分 | `card_id`、`grade`、`seconds`、`at`、`prev_state`(0.0.3，评分**之前**的 SRS 快照，JSON) |
+
+**`cards.suspended` 是「暂停」，不是「删除」**（0.0.3 加的，即 Anki 的 suspend）。
+「今天不想看这一批」是真实需求，但删掉会连进度一起丢掉。暂停的卡：
+不进 `due_cards()` 队列、不计入 `stats().due_now`，但行还在，随时能恢复。
+
+**`reviews.prev_state` 存的是评分前的状态**（0.0.3 加的），撤销时原样写回。
+为什么不拿公式反推：反推会因为浮点累积误差导致「撤销之后进度变了」。
+老记录没有这个字段（默认空串）时，撤销**拒绝执行**而不是清零 ——
+清零等于凭空毁掉用户的复习进度。同时撤销会**连这一行一起删掉**：
+`due_cards()` 数它来决定放多少新卡，撤了评分却留着记录，
+用户会发现新卡配额被静默吃掉。
 
 **`plans` 是一条独立的线**：它只负责「要建哪些训练包」，
 建出来的包就是普通的 `lessons` 行（`plan_id` 指回去）。
@@ -315,6 +326,63 @@ ETUDE_DATA_DIR 环境变量  >  bootstrap.json 指针  >  平台默认（%LOCALA
 `Path("   ").resolve()` 会变成当前工作目录 ——
 也就是把「什么都没填」当成「搬到当前目录」。
 
+### 4.11 音色只能有一个取法
+
+```python
+# backend/app/providers/tts.py
+def resolve_voice(cfg: dict) -> str:
+    engine = (cfg.get("engine") or "edge").strip().lower()
+    if engine == "openai":
+        return ((cfg.get("openai") or {}).get("voice") or "").strip() or OPENAI_VOICES[0]
+    return (cfg.get("voice") or "").strip() or "en-US-AriaNeural"
+```
+
+配置里有两个**互不通用**的音色字段：`tts.voice` 是 Edge 的音色名
+（`en-US-AriaNeural`），`tts.openai.voice` 是大模型端点的音色名（`alloy`）。
+
+**0.0.2 的 bug 正是「取音色的地方有三处」**：合成、补语音、试听各读一遍
+`tts.voice`。用户一切到「大模型语音」，程序就把 Edge 的音色名发给
+`/audio/speech` → 400 `Invalid voice` → **每一条语音都失败，整包静音**，
+而失败只写进日志、自检只 `import edge_tts` 就算过。
+
+所以这条不变量是：**取音色只能经过 `resolve_voice()`**，
+而且**大模型那条路绝不退回 Edge 的音色名** ——
+退回的名字一样会被 400 拒掉，而且更难查（因为「配置里确实填了音色」）。
+`synthesize_cfg(text, cfg)` 承接整段配置，三条路径统一走它。
+
+**配套的一条**：自检必须**真的出声**。一个不会失败的检查不是检查 ——
+`--deep` 时会真的合成一句短文，让「音色取错」「密钥不对」「网络不通」
+当场暴露，而不是等用户发现整包静音。
+
+### 4.12 「并行」的语义是先到先得，不是都等再择优
+
+```python
+# backend/app/providers/images.py
+pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="etude-img")
+try:
+    jobs = {pool.submit(_fetch, src, ...): src for src in ("search", "llm")}
+    for fut in as_completed(jobs):        # ← 谁先回来谁先判
+        ...
+        return _store(src, key_of(src), raw, ext)
+finally:
+    pool.shutdown(wait=False, cancel_futures=True)
+```
+
+检索 1–3 秒、画图 8–25 秒，差一个数量级。**等两个都到，等于把画图的慢
+加在检索身上** —— 那就不是并行了。而「择优」需要一把能比较「真照片」和
+「画出来的图」的尺子，这件事没有客观答案，硬编权重只会让结果不可解释。
+
+先到先得反而有一个**可解释的必然结果**：绝大多数时候检索赢（拿到真照片），
+只有检索限流 / 搜不到 / 超时时画图才接上场。这恰好就是想要的优先级。
+
+两个细节：
+
+- **`wait=False`，并且不假装能取消败者。** 正在跑的线程在 Python 里停不掉，
+  写一个 `cancel()` 只会让读代码的人以为它真的被停了。
+- **落盘文件名用实际命中的来源前缀**（`search-` / `llm-`），
+  不是统一的 `both-`。否则用户从「并行」切到「只用检索」时会重新下载同一张图 ——
+  缓存和单源模式对不上。
+
 ---
 
 ## 五、HTTP 接口
@@ -339,10 +407,21 @@ ETUDE_DATA_DIR 环境变量  >  bootstrap.json 指针  >  平台默认（%LOCALA
 | POST | `/api/lessons/{id}/audio` | 只补音频（不动例句） |
 | DELETE | `/api/lessons/{id}` | 删包（级联删例句/卡/记录） |
 | GET | `/api/audio/{name}` | 音频。正则校验，带缓存头 |
-| GET | `/api/queue` | 队列：到期卡 + 新卡配额 |
-| GET | `/api/cards/{id}` | 单张卡（含该通道要显示什么） |
-| POST | `/api/cards/{id}/grade` | 评分 → 重排期 |
-| GET | `/api/stats` | 统计 |
+| GET | `/api/queue` | 队列：到期卡 + 新卡配额（**排除暂停的卡**） |
+| GET | `/api/cards/{id}` | 单张卡（含该通道要显示什么、SRS 预览、`can_undo`） |
+| POST | `/api/cards/{id}/grade` | 评分 → 重排期，并把评分前的状态存进 `reviews.prev_state` |
+| POST | `/api/cards/{id}/undo` | 撤销最近一次评分（0.0.3） |
+| PATCH | `/api/cards/{id}` | 手改单张卡的 SRS / 暂停 / 打回新卡（0.0.3） |
+| GET | `/api/cards` | 卡片浏览器：筛选 + 分页（0.0.3） |
+| POST | `/api/cards/batch` | 批量改一批卡（0.0.3） |
+| POST | `/api/cards/push` | 批量往后推 N 天（0.0.3） |
+| PATCH | `/api/examples/{id}` | 改例句（白名单字段）（0.0.3） |
+| DELETE | `/api/examples/{id}` | 删例句，**手写级联**删它的卡（0.0.3） |
+| POST | `/api/lessons/{id}/examples` | 手加一条例句，**同时铺五个通道的卡**（0.0.3） |
+| POST | `/api/examples/{id}/audio` | 只重做这一条的语音（0.0.3） |
+| POST | `/api/examples/{id}/image` | 只重做这一条的配图（0.0.3） |
+| POST | `/api/lessons/{id}/rebuild-cards` | 补齐「有例句没卡」的缺口，**不动已有进度**（0.0.3） |
+| GET | `/api/stats` | 统计（含 `suspended`） |
 | POST | `/api/backup` | 备份（`VACUUM INTO`） |
 | GET | `/` | 界面 HTML，`no-store` |
 
@@ -400,7 +479,9 @@ RELEARN_MINUTES = 10.0
 
 ## 七、前端
 
-`backend/frontend/index.html`，约 1480 行，**单文件、零构建、零 CDN**。
+`backend/frontend/index.html`，约 4,500 行，**单文件、零构建、零 CDN**。
+（这份文档里凡是写死行数的地方都容易过时 —— 行数是**结论**，
+不是需要维护的事实。数字不对时以 `wc -l` 为准。）
 
 | 决定 | 为什么 |
 |---|---|
@@ -525,4 +606,7 @@ dist/build3/Etude       第三次
 | 加一个模型厂商 | `providers/llm.py` 的 `PRESETS`（一处） | 如果是非 OpenAI 兼容协议，那是另一件事 |
 | 改提示词 | `prompts.py` 的 `SYSTEM` | 跑一遍 `test_prompts_forbid_translation_shaped_scenes` |
 | 改前端 | `frontend/index.html` | 跑 `check_js.py` + `ui_smoke.js` |
-| 改打包 | `build/etude.spec` | 重新跑 `build_exe.py`（归档核对会告诉你有没有切坏） |
+| 加一个配图来源 | `providers/images.py` 的 `IMAGE_SOURCES` + `provide()` 的分支 | **`IMAGE_SOURCES[0]` 就是默认值**（界面第一个）。老配置里写着别的词时会退回 `search`，别改成报错 |
+| 加一个音频引擎 | `providers/tts.py` 的 `resolve_voice()` + `synthesize()` | 音色的取法**只能有这一处**，见 4.11 |
+| 加一个配色 | `index.html` 里 `<style>` 的 `:root` / `html[data-theme=...]` + `THEMES` | 三个地方要一起加：`:root`（暖白默认）、`@media (prefers-color-scheme: dark)`、`html[data-theme="..."]`。`ui_smoke.js` 会逐个验底色 |
+| 改打包 | `build/etude.spec` | 重新跑 `build_exe.py`（归档核对会告诉你有没有切坏）。**发版前确认 `dist/` 里最新那个目录真的是这一版** —— `make_release.py` 现在会核对，但它拦不住你没重新构建 |

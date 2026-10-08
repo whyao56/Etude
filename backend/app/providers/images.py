@@ -7,11 +7,25 @@
 两条来源，用户自己选：
 
 - **search**：从开放图库检索现成的照片（Openverse 为主，Wikimedia Commons
-  兜底）。**不需要密钥、不花钱**，所以是默认值。缺点是只能命中真实存在的
-  东西，「收到快递发现是坏的」这种情境搜不到。
+  兜底）。**不需要密钥、不花钱**。缺点是只能命中真实存在的东西，
+  「收到快递发现是坏的」这种情境搜不到。
 - **llm**：让文生图模型画一张。任何 OpenAI 兼容的 ``/images/generations``
   都能用（智谱 CogView-3-Flash 有免费档）。慢一些、可能要花钱，
   但能画出检索不出来的情境。
+- **both**（0.0.3 起的默认）：**两条路同时跑，谁先给出合格的图就用谁。**
+
+## 为什么默认改成 both
+
+0.0.2 只能二选一，用户用了之后的反馈是「图片生成质量不行」。这句话背后
+其实是两件事，只有并行能同时解决：
+
+1. **只靠生成**：画得慢，而且模型画出来的东西经常「像那么回事但不是那个场合」，
+   真实照片在「看一眼就懂」这件事上明显更可靠。
+2. **只靠检索**：抽象情境搜不到；Openverse 偶尔限流，一限流整个包都没图。
+
+并行之后，两者互为兜底，而且**延迟是两条路里快的那条**，不是两条之和。
+实测检索通常 1–3 秒、生成 8–25 秒，所以多数情况是检索胜出 ——
+这正是想要的：真照片优先，生成在检索失败时把场子接住。
 
 ## 一个必须说清的取舍
 
@@ -32,6 +46,7 @@ import hashlib
 import json
 import re
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -68,9 +83,12 @@ IMAGE_PRESETS: dict[str, dict[str, str]] = {
 }
 
 IMAGE_SOURCES = [
-    {"id": "search", "label": "从开放图库检索（免费、无需密钥）",
+    {"id": "both", "label": "检索 + 画图 并行（推荐）",
+     "what": "两条路同时跑，谁先给出合格的图就用谁。真照片优先，画图兜底；"
+             "检索被限流时画图会接上，不会整个包没图。"},
+    {"id": "search", "label": "只从开放图库检索（免费、无需密钥）",
      "what": "搜真实照片。命中率高、速度快；抽象情境可能搜不到。"},
-    {"id": "llm", "label": "用文生图模型画（需要配置）",
+    {"id": "llm", "label": "只用文生图模型画（需要配置）",
      "what": "什么情境都能画；慢一些，可能要花钱。"},
     {"id": "off", "label": "不用图片（只保留文字场景）",
      "what": "理论上最「干净」的形态：输入到意思之间不夹任何图片。"},
@@ -79,9 +97,12 @@ IMAGE_SOURCES = [
 # 允许的单张图片体积。检索回来的图动辄几 MB，全存下来数据目录会爆。
 MAX_BYTES = 4 * 1024 * 1024
 
+# 合法的缓存文件名。图片来源多了之后这里要跟着多 `both` ——
+# both 模式落盘时用的仍然是**实际命中的那个来源**（search / llm），
+# 所以文件名不会出现 both 前缀，缓存也就能被单源模式直接复用。
 _NAME = re.compile(r"^[a-z]+-[0-9a-f]{20}\.(jpg|png|webp|gif)$")
 
-_UA = {"User-Agent": "Etude/0.0.2 (language drilling app; contact via project repo)"}
+_UA = {"User-Agent": "Etude/0.0.3 (language drilling app; contact via project repo)"}
 
 
 class ImageError(RuntimeError):
@@ -125,42 +146,114 @@ def build_prompt(scene_en: str, sentence: str = "") -> str:
     **用场景而不是例句。** 例句是语言，图要画的是情境；拿例句去画会得到
     「一句话的插画」，而不是「说这句话的场合」。
 
-    里面那条 ``no text`` 是必须的：文生图模型往图里写字基本都是乱码，
-    而乱码英文出现在一个英语学习工具里格外刺眼。
+    0.0.3 把这段提示词整个重写过。用户反馈「图片生成质量不行」，
+    原来那段只说了「照片感、自然光、不要文字」，太软 —— 模型于是经常给
+    插画风、拼贴图、糊掉的人脸、或者干脆一块抽象色块。现在拆成四段：
+
+    1. **画面**（第一句就是场景原文，权重最高，放最前面）
+    2. **怎么拍**：给出具体的摄影语言。模型对「35mm / 现场光 / 中景」
+       这类词的响应远好于「photorealistic」一个形容词。
+    3. **硬性要求**：写成 must / 不要，逐条列。``no text`` 尤其重要 ——
+       文生图模型往图里写字基本都是乱码，而乱码英文出现在一个
+       英语学习工具里格外刺眼。
+    4. **反面清单**：明确列出要避免的风格。**不靠 negative_prompt 字段**
+       —— 那个字段各家支持不一致，写进正文里到处都生效。
     """
     scene = (scene_en or "").strip()
     if not scene:
         # 没有英文场景时退回到中文场景，让上游再传一次。
         return ""
     return (
-        f"{scene}\n"
-        "Photorealistic candid photograph, natural lighting, everyday setting. "
-        "Show the situation itself, not an illustration of a sentence. "
-        "Do not include any text, words, letters, numbers, signage or logos. "
-        "No captions, no watermarks. Landscape orientation."
+        f"{scene}\n\n"
+        "Shot as a real documentary photograph: 35mm lens, natural available "
+        "light, on location in an ordinary everyday place, honest colours.\n\n"
+        "Requirements:\n"
+        "- one single clear subject, mid shot, readable at a glance\n"
+        "- purely photographic — not an illustration, drawing, painting, "
+        "3D render, anime or CGI\n"
+        "- no text, letters, numbers, signs, labels, captions, watermarks or "
+        "logos anywhere in the frame\n"
+        "- no collage, no split panels, no border, no frame, no mockup\n"
+        "- landscape orientation\n\n"
+        "Avoid: cartoon style, oversaturated colours, glowing or fantasy "
+        "lighting, distorted faces, extra fingers or limbs, blurred mush, "
+        "empty abstract backgrounds."
     )
+
+
+# 场景句的常见句式是「At X, someone <心理动词/言说动词> — you say Y」。
+# 破折号后面那半句讲的是**说了什么**，不是画面里有什么；
+# 心理/言说动词（worry / wonder / say / tell）也不该进检索词 —— 图库里没有
+# 一张照片叫「worry」。这两条是 0.0.2 检索命中率偏低的主要原因。
+_SCENE_CUT = re.compile(r"\s*[—–]\s*|\s+-\s+")
+
+_NOT_IN_A_PHOTO = {
+    # 言说 / 认知 / 情绪：这些词描述的是人脑里的活动，图库里搜不到
+    "say", "says", "said", "tell", "tells", "told", "ask", "asks", "asked",
+    "worry", "worries", "worried", "wonder", "wonders", "wondered",
+    "think", "thinks", "thought", "feel", "feels", "felt", "want", "wants",
+    "wanted", "need", "needs", "needed", "mean", "means", "meant",
+    "know", "knows", "knew", "realise", "realize", "notice", "notices",
+    "decide", "decides", "decided", "try", "tries", "tried", "hope", "hopes",
+    "expect", "expects", "seem", "seems", "look", "looks", "sound", "sounds",
+    "hear", "hears", "heard", "explain", "explains", "mention", "mentions",
+    "anyone", "anybody", "everyone", "everybody", "nobody", "something",
+    "anything", "nothing", "everything", "get", "gets", "got", "make",
+    "makes", "made", "take", "takes", "took", "give", "gives", "gave",
+    "come", "comes", "came", "go", "goes", "went", "put", "puts",
+}
 
 
 def build_query(scene_en: str, sentence: str = "") -> str:
     """检索词。检索要的是**几个关键词**，不是一整句描述 ——
     搜索引擎对长句的命中率极差，这是「照着一句话去搜、什么都搜不到」的
-    典型原因。"""
+    典型原因。
+
+    0.0.3 加了两步处理，都是为了命中率：
+
+    - **砍掉破折号之后的部分**。场景句后半截往往是「你说了一句什么」，
+      那一半描述的是语言而不是画面。
+    - **滤掉心理 / 言说动词**。``worried`` ``says`` ``wonder`` 这类词
+      在真实照片的标题里基本不会出现，带上它们只会把结果带偏。
+
+    过滤后如果什么都不剩（说明整句都是心活动），退回原始词表 ——
+    宁可搜得糙，也不要交一个空检索词上去。
+    """
     text = (scene_en or "").strip() or (sentence or "").strip()
     if not text:
         return ""
-    words = re.findall(r"[A-Za-z][A-Za-z'-]+", text)
+    # 只看破折号前半段，那半段才是「画面」。
+    head = _SCENE_CUT.split(text, 1)[0].strip() or text
+    words = re.findall(r"[A-Za-z][A-Za-z'-]+", head)
     stop = {
         "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
         "to", "of", "in", "on", "at", "for", "with", "and", "or", "but",
         "someone", "somebody", "you", "your", "he", "she", "they", "their",
         "his", "her", "it", "its", "that", "this", "these", "those", "who",
         "when", "while", "as", "has", "have", "had", "do", "does", "did",
-        "very", "just", "about", "into", "from", "by", "so", "then",
+        "very", "just", "about", "into", "from", "by", "so", "then", "not",
+        "will", "would", "can", "could", "should", "won", "don", "didn",
+        "isn", "aren", "there", "here", "out", "up", "down", "over", "again",
     }
-    picked = [w.lower() for w in words if w.lower() not in stop]
+    picked = []
+    for w in words:
+        low = w.lower()
+        # 缩写要拆开看：``won't`` 的基词是 ``won``，``isn't`` 的是 ``isn``。
+        # 不拆的话这两个词会以「不认识的词」的身份混进检索词，
+        # 而它们在照片标题里当然一个都命中不了。
+        base = low.split("'", 1)[0].rstrip("’")
+        if low in stop or low in _NOT_IN_A_PHOTO:
+            continue
+        if base in stop or base in _NOT_IN_A_PHOTO:
+            continue
+        picked.append(low)
+    if not picked:
+        picked = [w.lower() for w in words if w.lower() not in stop]
     if not picked:
         picked = [w.lower() for w in words]
-    return " ".join(picked[:6])
+    # 长的词更有信息量（``motorway`` 比 ``road`` 有用），同长度保持原序。
+    picked.sort(key=lambda w: -len(w))
+    return " ".join(picked[:5])
 
 
 # --------------------------------------------------------------- 缓存命名
@@ -258,6 +351,11 @@ def _search_openverse(query: str, timeout: float) -> list[dict]:
             "width": int(item.get("width") or 0),
             "height": int(item.get("height") or 0),
             "title": item.get("title") or "",
+            # Openverse 带 tags，是免费的相关性信号，拿来排序。
+            "tags": " ".join(
+                str(t.get("name") or "") if isinstance(t, dict) else str(t)
+                for t in (item.get("tags") or [])
+            ),
             "creator": item.get("creator") or "",
             "license": item.get("license") or "",
             "page": item.get("foreign_landing_url") or "",
@@ -299,20 +397,47 @@ def _search_commons(query: str, timeout: float) -> list[dict]:
     return out
 
 
-def pick_candidate(candidates: list[dict]) -> dict | None:
+def _title_hits(item: dict, words: set[str]) -> int:
+    """这条候选的标题 / 标签里命中了几个检索词。
+
+    这是「检索质量」最便宜也最有效的一道闸：图库对同一个查询会返回
+    「大致相关」的一堆东西，而标题往往是唯一能区分「水仙花」和
+    「川流不息的人群」的线索。0.0.2 只看横图和分辨率，
+    于是排序第一的经常是一张高清但不相干的图。
+    """
+    if not words:
+        return 0
+    blob = " ".join([
+        str(item.get("title") or ""),
+        str(item.get("tags") or ""),
+        str(item.get("creator") or ""),
+    ]).lower()
+    return sum(1 for w in words if w and w in blob)
+
+
+def pick_candidate(candidates: list[dict], query: str = "") -> dict | None:
     """挑一张。
 
-    先按「横图优先」排：竖图放进卡片里要么被裁掉一半，要么把版面撑得很高。
-    再按分辨率下限过滤 —— 搜回来的缩略图有时只有 100px 宽，放大后糊成一片，
-    还不如不放。
+    排序规则（按优先级）：
+
+    1. **标题命中检索词的个数**，多的优先 —— 见 :func:`_title_hits`。
+    2. **横图优先**：竖图放进卡片里要么被裁掉一半，要么把版面撑得很高。
+    3. **分辨率**，但不追求越大越好：超过 4000px 之后对训练卡已经没有
+       区别，只让下载更慢，所以按 4000 封顶计。
+
+    分辨率**下限**（480px）单独处理：先过滤，若过滤后一张不剩就放宽 ——
+    「有一张糊的总比没有图强」，何况宁可要一张模糊的真照片，
+    也不要一张清晰的错误照片。
     """
     usable = [c for c in candidates if c.get("width", 0) >= 480]
     if not usable:
         usable = candidates
     if not usable:
         return None
+    words = {w for w in (query or "").lower().split() if len(w) > 2}
     usable.sort(
         key=lambda c: (
+            -_title_hits(c, words),
             0 if c.get("width", 0) >= c.get("height", 1) else 1,
             -min(c.get("width", 0), 4000),
         )
@@ -336,7 +461,7 @@ def search_image(query: str, *, timeout: float = 20.0) -> tuple[bytes, str, dict
         except Exception as exc:  # noqa: BLE001
             problems.append(f"{name}：{exc}")
             continue
-        best = pick_candidate(candidates)
+        best = pick_candidate(candidates, query)
         if best is None:
             problems.append(f"{name}：没有结果")
             continue
@@ -527,6 +652,102 @@ def check(*, source: str, query: str = "a person drinking coffee in a kitchen",
     }
 
 
+def _fetch(source: str, query: str, prompt: str, gen_cfg: dict, timeout: float) -> tuple[bytes, str]:
+    """按单一路径去拿图片字节。不落盘，不碰缓存。"""
+    if source == "llm":
+        return _generate_llm(prompt or query, gen_cfg or {}, timeout)
+    raw, ext, _meta = search_image(query or prompt, timeout=timeout)
+    return raw, ext
+
+
+def _store(source: str, key: str, raw: bytes, ext: str) -> str:
+    """校验体积并落盘，返回文件名。two 条路径共用这一段。"""
+    if not raw:
+        raise ImageError("图片内容是空的。", "换个来源或重试。")
+    if len(raw) > MAX_BYTES:
+        raise ImageError(f"图片太大（{len(raw) // 1024} KB）。", "换个来源试试。")
+    name = cache_name(source, key, ext)
+    target = images_dir() / name
+    target.write_bytes(raw)
+    if target.stat().st_size == 0:
+        # 和 TTS 那边同样的理由：有的库/端点会「成功返回但不写字节」。
+        raise ImageError("图片没有写进磁盘。", "这多半是磁盘的问题，检查剩余空间。")
+    return name
+
+
+def _provide_both(
+    *, query: str, prompt: str, gen_cfg: dict | None, timeout: float, force: bool
+) -> str:
+    """两条路并行，**先给出合格图的那条胜出**，另一条立刻放弃。
+
+    为什么是「先到先得」而不是「两个都等、再择优」：
+
+    - 检索 1–3 秒、画图 8–25 秒，两者差一个数量级。等两个都到，
+      等于把画图的慢**加**在检索身上 —— 那就不是并行了。
+    - 择优需要一把能比较「真照片」和「画出来的图」的尺子，而这件事
+      没有客观答案。硬编一个权重只会让结果变得不可解释。
+    - 先到先得有个**可解释的必然结果**：绝大多数时候检索赢，所以默认
+      得到真照片；只有当检索限流 / 搜不到 / 超时时，画图才接上场。
+      这恰好就是想要的优先级，而且是「顺带实现的」，不需要额外规则。
+
+    实现上的一个细节：退出时 ``wait=False``。败者那条线程可能还在等
+    画图接口返回，**主线程不为它等待**。这里不假装能取消它 ——
+    正在跑的线程在 Python 里停不掉，只是不再有人要它的结果。
+    """
+    key_of = lambda src: f"{src}\x1f{query or prompt}"  # noqa: E731
+
+    if not force:
+        for src in ("search", "llm"):
+            hit = cached(src, key_of(src))
+            if hit:
+                return hit
+
+    pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="etude-img")
+    errors: dict[str, Exception] = {}
+    try:
+        jobs = {
+            pool.submit(_fetch, src, query, prompt, gen_cfg or {}, timeout): src
+            for src in ("search", "llm")
+        }
+        for fut in as_completed(jobs):
+            src = jobs[fut]
+            try:
+                raw, ext = fut.result()
+                return _store(src, key_of(src), raw, ext)
+            except ImageError as exc:
+                errors[src] = exc
+            except Exception as exc:  # noqa: BLE001 - 任何一条路挂掉都不该拖垮另一条
+                errors[src] = exc
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    raise _both_failed(errors)
+
+
+def _both_failed(errors: dict[str, Exception]) -> ImageError:
+    """两条路都没成 —— 错误提示要说清**两边各自怎么失败的**。
+
+    只说「没找到图片」的话，用户没法判断该换关键词、该配画图模型、
+    还是该关掉配图。所以两边各带一句。
+    """
+    labels = {"search": "图库检索", "llm": "画图模型"}
+    parts: list[str] = []
+    hint = ""
+    for src in ("search", "llm"):
+        err = errors.get(src)
+        if err is None:
+            continue
+        parts.append(f"{labels[src]}：{str(err)[:120]}")
+        if not hint and getattr(err, "hint", ""):
+            hint = err.hint
+    detail = "；".join(parts) or "两条路都没有返回结果。"
+    return ImageError(
+        f"这一条没能配上图（{detail}）",
+        hint or "可以在设置里把配图来源改成「只用文生图模型画」，或者关掉配图。",
+        kind="not_found",
+    )
+
+
 def provide(
     *,
     query: str,
@@ -540,9 +761,18 @@ def provide(
 
     和音频一样存相对路径：存绝对路径的话，用户一改数据目录就全是死链。
     """
-    source = (source or "off").strip()
+    source = (source or "off").strip().lower()
     if source in ("off", "none", ""):
         return ""
+    if source not in ("search", "llm", "both"):
+        # 老配置 / 手改过的配置文件里可能写着别的词。
+        # 退回检索而不是报错 —— 一个拼错的来源名不该让整个包没图。
+        source = "search"
+
+    if source == "both":
+        return _provide_both(
+            query=query, prompt=prompt, gen_cfg=gen_cfg, timeout=timeout, force=force
+        )
 
     key = f"{source}\x1f{query or prompt}"
     if not force:
@@ -550,23 +780,8 @@ def provide(
         if hit:
             return hit
 
-    if source == "llm":
-        raw, ext = _generate_llm(prompt or query, gen_cfg or {}, timeout)
-    else:
-        raw, ext, _meta = search_image(query or prompt, timeout=timeout)
-
-    if not raw:
-        raise ImageError("图片内容是空的。", "换个来源或重试。")
-    if len(raw) > MAX_BYTES:
-        raise ImageError(f"图片太大（{len(raw) // 1024} KB）。", "换个来源试试。")
-
-    name = cache_name(source, key, ext)
-    target = images_dir() / name
-    target.write_bytes(raw)
-    if target.stat().st_size == 0:
-        # 和 TTS 那边同样的理由：有的库/端点会「成功返回但不写字节」。
-        raise ImageError("图片没有写进磁盘。", "这多半是磁盘的问题，检查剩余空间。")
-    return name
+    raw, ext = _fetch(source, query, prompt, gen_cfg or {}, timeout)
+    return _store(source, key, raw, ext)
 
 
 def source_catalog() -> dict:
@@ -577,11 +792,13 @@ __all__ = [
     "IMAGE_PRESETS",
     "IMAGE_SOURCES",
     "ImageError",
+    "MAX_BYTES",
     "build_prompt",
     "build_query",
     "cache_name",
     "cached",
     "check",
+    "pick_candidate",
     "provide",
     "search_image",
     "source_catalog",

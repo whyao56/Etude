@@ -66,6 +66,67 @@ class GradeIn(BaseModel):
     seconds: float = Field(default=0.0, ge=0.0, le=3600.0)
 
 
+class CardSrsIn(BaseModel):
+    """老手直接改一张卡的复习参数。只改传进来的字段。"""
+
+    interval: float | None = Field(default=None, ge=0.0, le=3650.0)
+    ease: float | None = Field(default=None, ge=1.3, le=3.5)
+    due_at: str | None = None
+    suspended: bool | None = None
+    # 打回「新卡」：Anki 的 Forgot / Reschedule 里那个「当作没学过」。
+    # 单独一个开关而不是 interval=0 —— 后者只改到期时间，
+    # 卡片仍然算「已引入」，会占着每天的复习配额。
+    introduced: bool | None = None
+
+
+class CardBatchIn(BaseModel):
+    """批量改卡。一次请求，不是 N 次 —— 200 张卡逐张发请求会卡住界面。"""
+
+    ids: list[int] = Field(min_length=1, max_length=500)
+    patch: CardSrsIn
+
+
+class CardPushIn(BaseModel):
+    """把一批卡一起往后推 N 天。"""
+
+    ids: list[int] = Field(min_length=1, max_length=500)
+    days: float = Field(ge=0.0, le=3650.0)
+
+
+class ExampleIn(BaseModel):
+    """改一条例句。字段全部可选 —— 只传改了的那几个。
+
+    ``register`` 对外照旧叫 ``register``，Python 属性名换成 ``register_text``：
+    叫 ``register`` 会盖住 ``BaseModel`` 上的同名方法，pydantic 每次校验
+    都会为此发一行警告。0.0.2 的 ``DataLocationIn.copy`` 是同一个坑，
+    这里用同一种办法处理 —— 接口形状不变，只换内部名字。
+    取数据时用 ``by_alias=True`` 换回 ``register``，正好对上数据库字段名。
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    sentence: str | None = Field(default=None, max_length=600)
+    scene_en: str | None = Field(default=None, max_length=2000)
+    scene_zh: str | None = Field(default=None, max_length=2000)
+    register_text: str | None = Field(default=None, alias="register", max_length=120)
+    zh_variants: list[str] | None = None
+    scene_image: str | None = Field(default=None, max_length=120)
+
+
+class NewExampleIn(BaseModel):
+    """手工加一条例句。"""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    sentence: str = Field(min_length=1, max_length=600)
+    scene_en: str = Field(default="", max_length=2000)
+    scene_zh: str = Field(default="", max_length=2000)
+    register_text: str = Field(default="", alias="register", max_length=120)
+    zh_variants: list[str] = Field(default_factory=list)
+    # 加完顺手把语音（和配图）也生成了。默认开 —— 手工加的句子同样要能听。
+    make_media: bool = True
+
+
 class ConfigIn(BaseModel):
     llm: dict | None = None
     tts: dict | None = None
@@ -220,11 +281,10 @@ def test_llm() -> dict:
 def test_tts() -> dict:
     cfg = config.load()["tts"]
     try:
-        return tts.check(
-            engine=cfg.get("engine", "edge"),
-            voice=cfg.get("voice", "en-US-AriaNeural"),
-            openai_cfg=cfg.get("openai", {}),
-        )
+        # 整段配置交进去，音色由 tts.resolve_voice 按引擎决定。
+        # 0.0.2 之前这里传的是 cfg["voice"]（Edge 音色名），
+        # 切到「大模型语音」后试听和生成会一起失败 —— 见 resolve_voice 的注释。
+        return tts.check(cfg)
     except tts.TTSError as exc:
         return JSONResponse(
             status_code=400, content={"error": str(exc), "hint": exc.hint}
@@ -595,6 +655,11 @@ def get_card(card_id: int) -> dict:
     payload["srs_preview"] = srs.preview(
         card["interval"], card["ease"], card["reps"], card["lapses"]
     )
+    # 「能不能撤销」由后端说了算，前端不去猜 —— 猜的那天就会有一个
+    # 点了没反应的撤销按钮（0.0.2 修评分键修的正是这种事）。
+    last = db.last_review(card_id)
+    snapshot = (db._loads(last.get("prev_state"), None) if last else None)
+    payload["can_undo"] = isinstance(snapshot, dict) and "interval" in snapshot
     return payload
 
 
@@ -604,6 +669,148 @@ def grade_card(card_id: int, payload: GradeIn) -> dict:
         return db.grade_card(card_id, payload.grade, payload.seconds)
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/cards/{card_id}/undo")
+def undo_grade(card_id: int) -> dict:
+    """撤销这张卡最近一次评分。"""
+    try:
+        return db.undo_grade(card_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.patch("/api/cards/{card_id}")
+def patch_card(card_id: int, payload: CardSrsIn) -> dict:
+    try:
+        card = db.set_card_srs(card_id, payload.model_dump())
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"card": card}
+
+
+@app.get("/api/cards")
+def list_cards(
+    lesson_id: int = 0,
+    channel: str = "",
+    state: str = "all",
+    q: str = "",
+    limit: int = 200,
+    offset: int = 0,
+) -> dict:
+    """卡片浏览器。筛选 + 分页，给「老手调控」用。"""
+    return db.list_cards(
+        lesson_id=lesson_id, channel=channel, state=state,
+        search=q, limit=limit, offset=offset,
+    )
+
+
+# 批量那两个路由**必须声明在 /api/cards/{card_id} 之前**吗？
+# 这里其实不需要（方法不同、段数也不同），但放在一起更好找。
+@app.post("/api/cards/batch")
+def batch_cards(payload: CardBatchIn) -> dict:
+    patch = payload.patch.model_dump(exclude_none=True)
+    try:
+        result = db.set_cards_srs(payload.ids, patch)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return result
+
+
+@app.post("/api/cards/push")
+def push_cards(payload: CardPushIn) -> dict:
+    return db.push_cards(payload.ids, payload.days)
+
+
+# ------------------------------------------------------ 例句的手工编辑
+
+
+@app.patch("/api/examples/{example_id}")
+def patch_example(example_id: int, payload: ExampleIn) -> dict:
+    # by_alias=True 把 register_text 换回 register —— 数据库里的列就叫 register。
+    patch = payload.model_dump(exclude_none=True, by_alias=True)
+    try:
+        return {"example": db.update_example(example_id, patch)}
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.delete("/api/examples/{example_id}")
+def remove_example(example_id: int) -> dict:
+    try:
+        return db.delete_example(example_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/lessons/{lesson_id}/examples")
+def add_example(lesson_id: int, payload: NewExampleIn) -> dict:
+    if db.get_lesson(lesson_id) is None:
+        raise HTTPException(404, "没有这个训练包。")
+    try:
+        example_id = db.add_example(
+            lesson_id, payload.sentence,
+            scene_en=payload.scene_en, scene_zh=payload.scene_zh,
+            register=payload.register_text, zh_variants=payload.zh_variants,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    failures: list[str] = []
+    if payload.make_media:
+        # 手工加的句子也必须能听。只插一行数据的话，用户会在听力卡上
+        # 遇到一条永远没有声音的句子，而且不知道去哪补。
+        from . import pipeline
+
+        audio = pipeline.make_example_audio(example_id, failures)
+        image = pipeline.make_example_image(example_id, failures)
+        db.execute(
+            "UPDATE examples SET audio_path = ?, scene_image = ? WHERE id = ?",
+            (audio or "", image or "", example_id),
+        )
+    return {"example": db.example_by_id(example_id), "failures": failures}
+
+
+@app.post("/api/examples/{example_id}/audio")
+def redo_example_audio(example_id: int) -> dict:
+    from . import pipeline
+
+    if db.example_by_id(example_id) is None:
+        raise HTTPException(404, "没有这条例句。")
+    failures: list[str] = []
+    name = pipeline.make_example_audio(example_id, failures, force=True)
+    if not name:
+        raise HTTPException(400, failures[0] if failures else "语音合成失败。")
+    db.execute("UPDATE examples SET audio_path = ? WHERE id = ?", (name, example_id))
+    return {"audio_path": name}
+
+
+@app.post("/api/examples/{example_id}/image")
+def redo_example_image(example_id: int) -> dict:
+    from . import pipeline
+
+    if db.example_by_id(example_id) is None:
+        raise HTTPException(404, "没有这条例句。")
+    failures: list[str] = []
+    name = pipeline.make_example_image(example_id, failures, force=True)
+    if not name:
+        raise HTTPException(400, failures[0] if failures else "配图失败。")
+    db.execute("UPDATE examples SET scene_image = ? WHERE id = ?", (name, example_id))
+    return {"scene_image": name}
+
+
+@app.post("/api/lessons/{lesson_id}/rebuild-cards")
+def rebuild_cards(lesson_id: int) -> dict:
+    """补齐「有例句但没有卡」的缺口。**不重置任何已有进度。**"""
+    if db.get_lesson(lesson_id) is None:
+        raise HTTPException(404, "没有这个训练包。")
+    return db.rebuild_cards(lesson_id)
 
 
 @app.get("/api/stats")

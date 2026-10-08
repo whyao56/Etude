@@ -281,20 +281,35 @@ async function main() {
       await evaluate("document.querySelector('#health').textContent")
     );
     check(
-      "导航有四项，并且都能对上下面的视图",
-      (await evaluate("document.querySelectorAll('#nav button').length")) === 4
+      "导航有五项，并且都能对上下面的视图",
+      (await evaluate("document.querySelectorAll('#nav button').length")) === 5,
+      await evaluate("[...document.querySelectorAll('#nav button')].map(b => b.dataset.view).join(' / ')")
     );
 
-    // 要求 3：交互键都收到侧边栏里，并且有个收缩按钮。
+    // 0.0.3：评分键从侧边栏搬回了训练页。
+    //
+    // 0.0.2 把它们放在侧边栏，理由是「卡片一长就得往下翻才能评分」。
+    // 用过之后发现代价更大：评分是跟着卡片走的动作，放在固定栏里就成了
+    // 「眼睛在卡片上、手在屏幕另一头」；而且 266px 装不下「档位 + 下次间隔」，
+    // 只能显示成「先核对答案」，看着像坏了。
+    //
+    // 所以这两条现在是**反过来**的：训练页必须有四个，侧边栏必须一个都没有。
     await waitFor("!!state.current", "第一张卡");
     check(
-      "侧边栏里有四个评分键",
-      (await evaluate("document.querySelectorAll('#side-actions .grade').length")) === 4
+      "训练页里有四个评分键",
+      (await evaluate("document.querySelectorAll('#app .grader .grade').length")) === 4
     );
     check(
-      "卡片区域里不再有评分键",
-      (await evaluate("document.querySelectorAll('.stage .grade').length")) === 0,
-      "评分键必须只在侧边栏"
+      "侧边栏里不再有评分键",
+      (await evaluate("document.querySelectorAll('#side-actions .grade').length")) === 0,
+      "评分键必须跟卡片在一起"
+    );
+    check(
+      "每一档都写清了「按下去会推到什么时候」",
+      (await evaluate(`
+        [...document.querySelectorAll('#app .grader .grade')].every(b => b.querySelector('.when'))
+      `)) === true,
+      await evaluate("[...document.querySelectorAll('#app .grader .grade .when')].map(e => e.textContent).join(' | ')")
     );
 
     const collapsedBefore = await evaluate("document.querySelector('#side').classList.contains('collapsed')");
@@ -310,32 +325,44 @@ async function main() {
     );
 
     check(
-      "侧边栏里有当前卡片的操作区",
-      (await evaluate("document.querySelectorAll('#side-actions .panel').length")) >= 1
+      "侧边栏里有本次进度的显示",
+      (await evaluate("!!document.querySelector('#side-actions .tally')")) === true
     );
     await shot("01-shell");
 
-    // ------------------------------------------------- 要求 4：评分键
+    // ------------------------------------------------- 要求 4/6：评分键
     console.log("\n=== 评分键（真实鼠标逐个点）===");
     await waitFor("!!state.current && state.revealed === false", "一张还没翻面的卡");
 
     check(
       "翻面前，1/2/3 档没有被 disabled（0.0.1 就是死在这一点上）",
       (await evaluate(
-        "[...document.querySelectorAll('#side-actions .grade')].filter(b => b.disabled).length"
+        "[...document.querySelectorAll('#app .grader .grade')].filter(b => b.disabled).length"
       )) === 0
     );
+    // 0.0.3 把「还没翻面」的表现从「虚线边框 + 灰字」换成了
+    // 「长得和其他档一样，只在右上角挂一个小标签」——
+    // 原来那种画法在用户眼里和「禁用」没区别，正是「显示有点问题」。
     check(
-      "翻面前的四档都用虚线边框表达「还没到这一步」",
+      "翻面前，后三档挂的是「先看答案」的小标签，而不是变灰",
       (await evaluate(
-        "[...document.querySelectorAll('#side-actions .grade')].filter(b => b.dataset.pending === '1').length"
-      )) === 3 && (await evaluate("document.querySelector('#side-actions .grade[data-g=\"0\"]').dataset.pending")) === "0"
+        "[...document.querySelectorAll('#app .grader .grade')].filter(b => b.classList.contains('is-pending')).length"
+      )) === 3
+      && (await evaluate("document.querySelector('#app .grader .grade[data-g=\"0\"]').classList.contains('is-pending')")) === false
+    );
+    check(
+      "待用的档位**照样显示**下次间隔（0.0.2 是被那句提示顶掉的）",
+      (await evaluate(`
+        [...document.querySelectorAll('#app .grader .grade.is-pending .when')]
+          .every(e => e.textContent.trim().length > 3)
+      `)) === true,
+      await evaluate("[...document.querySelectorAll('#app .grader .grade.is-pending .when')].map(e => e.textContent).join(' | ')")
     );
 
     // 翻面前点「吃力」：必须是**先翻面 + 给一句话**，而不是没反应。
     const cursor0 = await evaluate("state.cursor");
     await clickAndExpect(
-      '#side-actions .grade[data-g="1"]',
+      '#app .grader .grade[data-g="1"]',
       {
         before: "state.revealed",
         after: "state.revealed",
@@ -345,21 +372,21 @@ async function main() {
     );
     check(
       "并且明确说了「再点一次」（否则用户以为点坏了）",
-      /再点一次|核对/.test(await evaluate("document.querySelector('#side-actions').textContent")),
+      /再点一次|核对/.test(await evaluate("document.querySelector('#app .grader').textContent")),
       (await evaluate("state.gradeNote")) || "（没有提示）"
     );
     check("这一步不该把这张卡评掉", (await evaluate("state.cursor")) === cursor0);
     check(
-      "翻面之后，四档都不再是「未到这一步」的样子",
+      "翻面之后，四档都不再挂「先看答案」",
       (await evaluate(
-        "[...document.querySelectorAll('#side-actions .grade')].filter(b => b.dataset.pending === '1').length"
+        "[...document.querySelectorAll('#app .grader .grade')].filter(b => b.classList.contains('is-pending')).length"
       )) === 0
     );
-    await shot("02-revealed-side");
+    await shot("02-revealed-grade");
 
     // 现在真的评一档，用真实鼠标。
     await clickAndExpect(
-      '#side-actions .grade[data-g="2"]',
+      '#app .grader .grade[data-g="2"]',
       {
         before: "state.cursor",
         after: "state.cursor",
@@ -367,6 +394,54 @@ async function main() {
         describe: (a, b) => `cursor ${a} → ${b}`,
       },
       "翻面后点「正常」，进入下一张"
+    );
+
+    // --------------------------------------- 要求 5：上一张 / 下一张 / 撤销
+    console.log("\n=== 上一张 / 下一张 / 撤销 ===");
+    const histLen = await evaluate("state.history.length");
+    check("评完一张之后有了可撤销的记录", histLen >= 1, `${histLen} 条`);
+
+    const beforeUndo = await evaluate("state.sessionDone");
+    await clickAndExpect(
+      "#grade-undo",
+      {
+        before: "state.sessionDone",
+        after: "state.sessionDone",
+        wait: 1200,
+        describe: (a, b) => `已练数 ${a} → ${b}`,
+      },
+      "「撤销上一评」把这一张退回了队列"
+    );
+    check(
+      "撤销之后这张卡又回到当前，并且是翻着面的（要能直接改评分）",
+      (await evaluate("state.revealed")) === true,
+      `revealed=${await evaluate("state.revealed")}，sessionDone ${beforeUndo} → ${await evaluate("state.sessionDone")}`
+    );
+
+    const beforeNext = await evaluate("state.cursor");
+    await clickAndExpect(
+      "#grade-next",
+      { before: "state.cursor", after: "state.cursor", wait: 900, describe: (a, b) => `cursor ${a} → ${b}` },
+      "「下一张」能跳过当前卡"
+    );
+    check(
+      "跳过不计入「本次已练」",
+      (await evaluate("state.sessionDone")) === beforeUndo - 1,
+      `sessionDone=${await evaluate("state.sessionDone")}（跳过前是 ${beforeUndo - 1}）`
+    );
+
+    const beforePrev = await evaluate("state.cursor");
+    await clickAndExpect(
+      "#grade-prev",
+      { before: "state.cursor", after: "state.cursor", wait: 900, describe: (a, b) => `cursor ${a} → ${b}` },
+      "「上一张」能回看"
+    );
+    check("回看之后 cursor 变小了", (await evaluate("state.cursor")) < beforePrev,
+      `cursor ${beforePrev} → ${await evaluate("state.cursor")}`);
+    check(
+      "「上一张」不会偷偷改数据（它只是回看）",
+      (await evaluate("state.history.length")) === 0,
+      "撤销记录条数：" + (await evaluate("state.history.length"))
     );
 
     // 剩下三档也要各自能按 —— 逐个走一遍完整周期。
@@ -381,12 +456,12 @@ async function main() {
     ]) {
       await waitFor("!!state.current && state.revealed === false", `第 ${g} 档用的新卡`);
       if (needsReveal) {
-        const first = await clickSelector(`#side-actions .grade[data-g="${g}"]`);
+        const first = await clickSelector(`#app .grader .grade[data-g="${g}"]`);
         await waitFor("state.revealed === true", `第 ${g} 档点第一下时把答案翻出来`);
         check(`「${name}」第一下点下去有反应（先翻面）`, first.ok, first.ok ? `点中的是 ${first.hit}` : first.reason);
       }
       const before = await evaluate("state.cursor");
-      const clicked = await clickSelector(`#side-actions .grade[data-g="${g}"]`);
+      const clicked = await clickSelector(`#app .grader .grade[data-g="${g}"]`);
       await sleep(900);
       const after = await evaluate("state.cursor");
       check(
@@ -413,6 +488,25 @@ async function main() {
       (await evaluate("state.cursor")) > beforeKeys,
       `cursor ${beforeKeys} → ${await evaluate("state.cursor")}`
     );
+    const beforeArrow = await evaluate("state.cursor");
+    await evaluate(`
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    `);
+    await sleep(800);
+    check(
+      "→ 键等于「下一张」",
+      (await evaluate("state.cursor")) > beforeArrow,
+      `cursor ${beforeArrow} → ${await evaluate("state.cursor")}`
+    );
+    await evaluate(`
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    `);
+    await sleep(800);
+    check(
+      "← 键等于「上一张」",
+      (await evaluate("state.cursor")) === beforeArrow,
+      `cursor 回到 ${await evaluate("state.cursor")}`
+    );
 
     // ------------------------------------------------------- 训练包页
     console.log("\n=== 训练包页 ===");
@@ -428,10 +522,22 @@ async function main() {
     const exCount = await evaluate("document.querySelectorAll('.example').length");
     check("打开了训练包并列出例句", exCount > 0, `${exCount} 条`);
     check(
-      "每条例句都有五种练法的入口",
+      "每条例句都有五种练法的入口，外加「编辑」和「删除」",
       (await evaluate(
         "Math.min(...[...document.querySelectorAll('.example')].map(e => e.querySelectorAll('.chanbtns button').length))"
-      )) === 5
+      )) >= 7
+    );
+    check(
+      "前五个入口确实是五种练法",
+      (await evaluate(`
+        ['阅读','听力','口语','打字','造句'].every((name, i) =>
+          document.querySelectorAll('.example .chanbtns button')[i].textContent.includes(name))
+      `)) === true,
+      await evaluate("[...document.querySelectorAll('.example .chanbtns button')].slice(0,7).map(b => b.textContent).join(' / ')")
+    );
+    check(
+      "训练包详情页有「自己加一条例句」的入口（模型少给一条时不用重生成整包）",
+      (await evaluate("!!document.querySelector('#new-ex-sentence')")) === true
     );
     // 要求 5：场景要有图（或至少说明为什么没有）。
     check(
@@ -443,9 +549,93 @@ async function main() {
     );
     await shot("04-lesson-detail");
 
+    // --------------------------------------------- 要求 7：卡片编辑器抽屉
+    console.log("\n=== 卡片编辑器（Anki 式编辑）===");
+    await evaluate(`
+      (() => {
+        const btns = [...document.querySelectorAll('.example .chanbtns button')];
+        const edit = btns.find(b => b.textContent.trim() === '编辑');
+        if (edit) edit.click();
+        return !!edit;
+      })()
+    `);
+    await waitFor("!!document.querySelector('.drawer')", "卡片编辑器抽屉");
+    check("打开了卡片编辑器抽屉", true);
+    check(
+      "抽屉里能改原文、场景、中文说法三类文字",
+      (await evaluate(`
+        !!document.querySelector('#ed-sentence') &&
+        !!document.querySelector('#ed-scene-en') &&
+        document.querySelectorAll('.drawer .varrow input').length > 0
+      `)) === true
+    );
+    check(
+      "抽屉里有语音的重新生成入口",
+      /重新生成语音/.test(await evaluate("document.querySelector('.drawer').textContent"))
+    );
+    check(
+      "抽屉里能手动贴一个图片地址（配图链路的最后兜底）",
+      (await evaluate("!!document.querySelector('#ed-img')")) === true
+    );
+    check(
+      "「简易」密度下不摆 SRS 数字，但说清了去哪开",
+      (await evaluate("!document.querySelector('#ed-interval') && document.querySelector('.drawer').textContent.includes('进阶')")) === true
+    );
+    await shot("04b-editor-simple");
+
+    // 切到进阶，SRS 数字就该出现。
+    await evaluate("(() => { setLook({ density: 'advanced' }); return true; })()");
+    await sleep(300);
+    check(
+      "切到「进阶」之后，间隔 / 难度 / 暂停都出现了",
+      (await evaluate(`
+        !!document.querySelector('#ed-interval') && !!document.querySelector('#ed-ease') &&
+        /暂停这张卡|恢复这张卡/.test(document.querySelector('.drawer').textContent)
+      `)) === true
+    );
+    // 改密度会顺手重画整个页面（抽屉里就有这个开关）。等背后的详情页
+    // 拉回来再截，否则截到的是那张「正在取这个包…」的转圈图。
+    await waitFor("document.querySelectorAll('.example').length > 0", "重画之后的例句列表");
+    await shot("04c-editor-advanced");
+
+    // 真的改一次中文说法，并确认落库了。
+    const newVariant = "冒烟检查改的：" + Date.now();
+    await evaluate(`
+      (() => {
+        const input = document.querySelector('.drawer .varrow input');
+        input.value = ${JSON.stringify(newVariant)};
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      })()
+    `);
+    await clickSelector('.drawer-foot button');
+    await sleep(1200);
+    check(
+      "保存之后重新读回来，改的内容在里面",
+      (await evaluate("document.body.textContent.includes(" + JSON.stringify(newVariant) + ")")) === true
+    );
+    check(
+      "改完还能打开抽屉（内容没被改坏）",
+      (await evaluate("!!document.querySelector('#ed-sentence')")) === true
+    );
+
+    await evaluate("(() => { if (state.editing) closeEditor(); return true; })()");
+    await sleep(300);
+    check("Esc / 关闭能把抽屉收掉", (await evaluate("!!document.querySelector('.drawer')")) === false);
+    await evaluate("(() => { setLook({ density: 'simple' }); return true; })()");
+    // 改密度会重画，而重画详情页要重新取一次这个包 —— 等它回来再往下点。
+    await waitFor("document.querySelectorAll('.example').length > 0", "重画之后的例句列表");
+
     // ------------------------------------------------------- 打字卡
     console.log("\n=== 打字卡 ===");
-    await clickSelector(".example .chanbtns button", 3);
+    // 这里必须先确认「人还在详情页」。上一段是从详情页打开抽屉的，
+    // 关掉抽屉之后如果掉回了训练包列表，`.chanbtns button` 就一个都不在了 ——
+    // 那样点下去等于什么都没点，却要等 15 秒才在 waitFor 上超时，
+    // 报出来的还是「等不到输入框」，跟真正的毛病（掉回列表）八竿子打不着。
+    const onDetail = await evaluate("document.querySelectorAll('.example .chanbtns button').length");
+    check("关掉抽屉之后仍然停在训练包的详情页", onDetail > 0, `${onDetail} 个练法入口`);
+    const typing = await clickSelector(".example .chanbtns button", 3);
+    check("点得到「练打字」", typing.ok, typing.ok ? `点中的是 ${typing.hit}` : typing.reason);
     await waitFor("!!document.querySelector('.typerow input')", "打字输入框");
     check("进入了打字训练", true);
     check(
@@ -510,6 +700,71 @@ async function main() {
     await shot("06-plans");
     await checkPlanRoundTrip();
 
+    // ------------------------------------------------------- 卡片浏览页
+    console.log("\n=== 卡片浏览页（老手调控）===");
+    await goto("#cards");
+    check("进入了卡片页", (await evaluate("state.view")) === "cards");
+    await waitFor("document.querySelectorAll('table.browser tbody tr').length > 0", "卡片列表");
+    const rows = await evaluate("document.querySelectorAll('table.browser tbody tr').length");
+    check("列出了卡片", rows > 0, `${rows} 行`);
+    check(
+      "筛选器有训练包 / 通道 / 状态 / 搜索四样",
+      (await evaluate("document.querySelectorAll('.filters label').length")) >= 4,
+      await evaluate("[...document.querySelectorAll('.filters label span')].map(s => s.textContent).join(' / ')")
+    );
+
+    // 「已暂停」这个筛选必须真的有东西可筛 —— 先暂停一张。
+    // 关键：先记下要暂停哪一张，之后才有资格断言「队列里没有它」。
+    // 只数 tr.off 的个数是不够的 —— 那只证明界面变了，证明不了后端真的把它踢出队列。
+    const pauseId = await evaluate("document.querySelector('table.browser tbody tr').dataset.id");
+    await clickSelector("table.browser .rowacts button");
+    await sleep(900);
+    const pausedRow = await evaluate(`(() => {
+      const tr = document.querySelector("table.browser tbody tr[data-id='${pauseId}']");
+      return tr ? tr.dataset.suspended : "missing";
+    })()`);
+    check(
+      "点「暂停」之后那一行被标成了暂停",
+      pausedRow === "1" && (await evaluate("document.querySelectorAll('table.browser tr.off').length")) >= 1,
+      `card ${pauseId} → suspended=${pausedRow}`
+    );
+
+    // 队列里必须查不到这张卡（后端 due_cards 排除 suspended）。
+    const queueIds = await evaluate(
+      "fetch('/api/queue?limit=200').then(r => r.json()).then(d => d.cards.map(c => String(c.id)))"
+    );
+    check(
+      "暂停的卡不出现在训练队列里",
+      Array.isArray(queueIds) && queueIds.indexOf(String(pauseId)) < 0,
+      `队列 ${Array.isArray(queueIds) ? queueIds.length : "?"} 张，不含 card ${pauseId}`
+    );
+
+    // 恢复回去，免得污染后面训练页的断言（队列少一张会让评分流程不稳定）。
+    await clickSelector(`table.browser tbody tr[data-id='${pauseId}'] .rowacts button`);
+    await sleep(900);
+    const backRow = await evaluate(`(() => {
+      const tr = document.querySelector("table.browser tbody tr[data-id='${pauseId}']");
+      return tr ? tr.dataset.suspended : "missing";
+    })()`);
+    check("恢复之后那张卡回到队列", backRow === "0", `card ${pauseId} → suspended=${backRow}`);
+
+    // 多选 + 批量：勾两个，应该出现批量操作条。
+    await evaluate(`
+      (() => {
+        const boxes = [...document.querySelectorAll('table.browser tbody input[type=checkbox]')];
+        for (const b of boxes.slice(0, 2)) { b.checked = true; b.dispatchEvent(new Event('change', { bubbles: true })); }
+        return true;
+      })()
+    `);
+    await sleep(500);
+    check(
+      "选中两张之后出现批量操作条",
+      (await evaluate("!!document.querySelector('.bulkbar')")) === true,
+      await evaluate("document.querySelector('.bulkbar') ? document.querySelector('.bulkbar').textContent.slice(0,40) : ''")
+    );
+    await shot("07-cards");
+    await evaluate("(() => { state.browser.picked = []; return true; })()");
+
     // -------------------------------------------------------- 设置页
     console.log("\n=== 设置页 ===");
     await goto("#settings");
@@ -530,6 +785,93 @@ async function main() {
       (await evaluate("document.querySelector('#llm-key').value")) === ""
     );
 
+    // 要求 2：配色。
+    //
+    // 这里原来是用「卡片文字里有没有『深色』」去选的，结果一直选到
+    // **「跟随系统」**那张 —— 它的说明写着「系统切到深色时跟着变」，
+    // 里面有「深色」两个字，而且排在最前面。点下去等于把主题设回 auto，
+    // 底色当然不变，于是这条用例常年红着，而毛病其实在用例自己身上。
+    // 现在改用 data-opt 精确选，并且逐套验证「真的换掉了颜色」。
+    console.log("\n=== 配色 ===");
+    check(
+      "设置里能选配色的四种模式",
+      (await evaluate("document.querySelectorAll('[data-opt^=\"theme:\"]').length")) === 4,
+      await evaluate("[...document.querySelectorAll('[data-opt^=\"theme:\"] b')].map(b => b.textContent).join(' / ')")
+    );
+
+    // 「r,g,b 三元组」的读取器。背景和字色各一个 —— 只写一个再复用的话，
+    // 很容易出现「拿底色当字色比」这种读了也看不出错的错误。
+    const rgbOf = (expr, prop) => evaluate(`
+      (() => {
+        const m = getComputedStyle(${expr}).${prop}.match(/[0-9.]+/g);
+        return m ? m.map(Number) : null;
+      })()
+    `);
+    const bgOf = (expr) => rgbOf(expr || "document.body", "backgroundColor");
+    const fgOf = (expr) => rgbOf(expr || "document.body", "color");
+    const lum = (rgb) => rgb && (rgb[0] + rgb[1] + rgb[2]) / 3;
+
+    const themeBg = {};
+    for (const id of ["warm", "light", "dark"]) {
+      const clicked = await clickSelector(`[data-opt="theme:${id}"]`);
+      await sleep(320);
+      themeBg[id] = await evaluate("getComputedStyle(document.body).backgroundColor");
+      const pressed = await evaluate(`document.querySelector('[data-opt="theme:${id}"]').getAttribute('aria-pressed')`);
+      check(
+        `点「${id}」真的换掉了底色，并且这一档被标成选中`,
+        clicked.ok && pressed === "true" && (await evaluate("state.theme")) === id,
+        `state.theme=${await evaluate("state.theme")} · aria-pressed=${pressed} · ${themeBg[id]}`
+      );
+    }
+    // 「三套配色」不能只是三个名字 —— 底色必须真的互不相同。
+    check(
+      "三套配色的底色互不相同（不然「三套」就是假的）",
+      new Set([themeBg.warm, themeBg.light, themeBg.dark]).size === 3,
+      `暖白 ${themeBg.warm} / 冷白 ${themeBg.light} / 深色 ${themeBg.dark}`
+    );
+
+    // 深色底下必须是浅字。只查这一边还不够 —— 「所有主题都用浅字」
+    // 这种错误照样能过，所以下面把浅色那边也反过来查一次。
+    await clickSelector('[data-opt="theme:dark"]');
+    await sleep(320);
+    const darkBg = await bgOf();
+    const darkFg = await fgOf();
+    check(
+      "深色下正文是浅色的（不能出现深字深底）",
+      lum(darkFg) > 140 && lum(darkBg) < 120,
+      `底色 ${darkBg} / 字色 ${darkFg}`
+    );
+
+    await clickSelector('[data-opt="theme:warm"]');
+    await sleep(320);
+    const warmBg = await bgOf();
+    const warmFg = await fgOf();
+    check(
+      "浅色下正文是深色的",
+      lum(warmFg) < 120 && lum(warmBg) > 180,
+      `底色 ${warmBg} / 字色 ${warmFg}`
+    );
+
+    const sizeBefore = await evaluate("parseFloat(getComputedStyle(document.body).fontSize)");
+    await clickSelector('[data-opt="size:l"]');
+    await sleep(320);
+    check(
+      "字号能调大（护眼的一半靠字够大）",
+      (await evaluate("parseFloat(getComputedStyle(document.body).fontSize)")) > sizeBefore,
+      sizeBefore + "px → " + (await evaluate("getComputedStyle(document.body).fontSize"))
+    );
+    await clickSelector('[data-opt="size:s"]');
+    await sleep(320);
+    check(
+      "字号也能调小",
+      (await evaluate("parseFloat(getComputedStyle(document.body).fontSize)")) < sizeBefore,
+      "→ " + (await evaluate("getComputedStyle(document.body).fontSize"))
+    );
+
+    // 还原成默认，别把后面几条断言带偏。
+    await evaluate("(() => { setLook({ theme: 'warm', fontSize: 'm', density: 'simple' }); return true; })()");
+    await sleep(300);
+
     const cfg = await evaluate("JSON.stringify(state.config || {})");
     check("设置里读到了配图配置", cfg.includes("images"), cfg.slice(0, 0) || "");
 
@@ -545,7 +887,7 @@ async function main() {
         })()
       `)) === true
     );
-    await shot("07-settings");
+    await shot("08-settings");
 
     // ---------------------------------------------------------- 深链接
     console.log("\n=== 深链接 ===");
