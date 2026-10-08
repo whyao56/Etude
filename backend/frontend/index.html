@@ -1,0 +1,1482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Etude · 句子五通道语言训练器</title>
+<!--
+  单文件、零构建、零外部依赖。
+  刻意不用任何 CDN：训练工具必须断网也能用（例句素材生成完就存在本机，
+  只有「新生成一个包」才需要联网）。
+
+  改这个文件时的注意事项（沿用上个项目的教训）：
+  · 没有编译器，所以改完要跑 `python scripts/check_js.py` 检查调用点
+  · APP_VERSION 必须和后端 app/__init__.py 里的版本号一致，有测试盯着
+-->
+<style>
+:root{
+  --bg:#0f1115; --panel:#171a21; --panel-2:#1e222b; --line:#2a2f3a;
+  --fg:#e6e9ef; --fg-dim:#98a1b3; --fg-faint:#6b7385;
+  --accent:#6ea8fe; --accent-dim:#2f4a73;
+  --ok:#4ec9a0; --warn:#e0b155; --bad:#e06c75;
+  --radius:14px; --radius-sm:9px;
+  --mono:ui-monospace,"Cascadia Mono","Consolas",monospace;
+  --sans:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --panel-2:#f0f2f6; --line:#dfe3ea;
+    --fg:#1c2027; --fg-dim:#5b6472; --fg-faint:#8b93a1;
+    --accent:#2f6fdb; --accent-dim:#cfe0fb;
+    --ok:#1f9d76; --warn:#a97a12; --bad:#c0392b;
+  }
+}
+html[data-theme="dark"]{
+  --bg:#0f1115; --panel:#171a21; --panel-2:#1e222b; --line:#2a2f3a;
+  --fg:#e6e9ef; --fg-dim:#98a1b3; --fg-faint:#6b7385;
+  --accent:#6ea8fe; --accent-dim:#2f4a73;
+  --ok:#4ec9a0; --warn:#e0b155; --bad:#e06c75;
+}
+html[data-theme="light"]{
+  --bg:#f6f7f9; --panel:#ffffff; --panel-2:#f0f2f6; --line:#dfe3ea;
+  --fg:#1c2027; --fg-dim:#5b6472; --fg-faint:#8b93a1;
+  --accent:#2f6fdb; --accent-dim:#cfe0fb;
+  --ok:#1f9d76; --warn:#a97a12; --bad:#c0392b;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font-family:var(--sans); font-size:15px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+a{color:var(--accent)}
+
+/* ---------------------------------------------------------------- 顶栏 */
+header{
+  display:flex;align-items:center;gap:14px;
+  padding:10px 18px;border-bottom:1px solid var(--line);
+  background:var(--panel);position:sticky;top:0;z-index:20;
+}
+.brand{display:flex;align-items:baseline;gap:8px;font-weight:650;letter-spacing:.2px}
+.brand b{font-size:17px}
+.brand span{color:var(--fg-faint);font-size:12px;font-weight:400}
+nav{display:flex;gap:2px;margin-left:10px}
+nav button{
+  padding:6px 13px;border-radius:8px;color:var(--fg-dim);font-size:14px;
+}
+nav button:hover{background:var(--panel-2);color:var(--fg)}
+nav button[aria-current="true"]{background:var(--accent-dim);color:var(--fg);font-weight:600}
+.spacer{flex:1}
+.badge{
+  font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:20px;
+  border:1px solid var(--line);color:var(--fg-faint);white-space:nowrap;
+}
+.badge.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
+.badge.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+.iconbtn{padding:6px 10px;border-radius:8px;color:var(--fg-dim);font-size:13px}
+.iconbtn:hover{background:var(--panel-2);color:var(--fg)}
+
+#banner{display:none;padding:9px 18px;font-size:13px;border-bottom:1px solid var(--line)}
+#banner.bad{display:block;background:color-mix(in srgb,var(--bad) 18%,var(--bg));color:var(--fg)}
+#banner.warn{display:block;background:color-mix(in srgb,var(--warn) 16%,var(--bg));color:var(--fg)}
+
+main{max-width:920px;margin:0 auto;padding:26px 18px 80px}
+h1{font-size:21px;margin:0 0 4px;font-weight:650}
+h2{font-size:16px;margin:26px 0 10px;font-weight:620}
+p.lead{color:var(--fg-dim);margin:0 0 18px;font-size:14px}
+
+.card{
+  background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);padding:18px;margin-bottom:14px;
+}
+.card.tight{padding:14px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.col{display:flex;flex-direction:column;gap:10px}
+.grow{flex:1;min-width:0}
+
+label.field{display:block;margin-bottom:12px}
+label.field > span{display:block;font-size:12px;color:var(--fg-dim);margin-bottom:5px}
+input[type=text],input[type=password],input[type=number],select,textarea{
+  width:100%;padding:9px 11px;border-radius:var(--radius-sm);
+  border:1px solid var(--line);background:var(--panel-2);outline:none;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:56px}
+
+.btn{
+  padding:9px 16px;border-radius:var(--radius-sm);background:var(--panel-2);
+  border:1px solid var(--line);font-size:14px;white-space:nowrap;
+}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#08111f;font-weight:650}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent}
+.btn.danger:hover{border-color:var(--bad);color:var(--bad)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:disabled:hover{border-color:var(--line)}
+
+.muted{color:var(--fg-dim)}
+.faint{color:var(--fg-faint);font-size:12.5px}
+.mono{font-family:var(--mono)}
+.hint{
+  font-size:12.5px;color:var(--fg-dim);background:var(--panel-2);
+  border-left:2px solid var(--accent-dim);padding:7px 11px;border-radius:0 6px 6px 0;
+  margin-top:10px;
+}
+.err{
+  font-size:13px;color:var(--fg);background:color-mix(in srgb,var(--bad) 15%,var(--bg));
+  border-left:2px solid var(--bad);padding:9px 12px;border-radius:0 6px 6px 0;margin-top:10px;
+}
+.err b{display:block;margin-bottom:2px}
+
+/* ------------------------------------------------------------ 训练界面 */
+.session{display:flex;flex-direction:column;gap:14px}
+.sessionbar{display:flex;align-items:center;gap:12px;font-size:13px;color:var(--fg-dim)}
+.progress{height:4px;background:var(--panel-2);border-radius:3px;flex:1;overflow:hidden}
+.progress i{display:block;height:100%;background:var(--accent);border-radius:3px;transition:width .25s}
+
+.stage{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:30px 24px;min-height:300px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;gap:18px;
+}
+.stage .chan{
+  font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent);
+  font-weight:600;
+}
+.stage .prompt-en{
+  font-size:30px;line-height:1.4;font-weight:500;letter-spacing:.2px;max-width:660px;
+}
+.stage .prompt-zh{font-size:23px;line-height:1.6;max-width:600px}
+.stage .prompt-scene{font-size:19px;line-height:1.65;max-width:620px;color:var(--fg)}
+.stage .task{color:var(--fg-dim);font-size:14px;max-width:560px}
+.stage hr{width:70%;border:none;border-top:1px solid var(--line);margin:2px 0}
+.answer{font-size:25px;font-weight:500;line-height:1.45;max-width:660px}
+.scenebox{font-size:14px;color:var(--fg-dim);max-width:620px;line-height:1.7}
+.scenebox em{color:var(--fg);font-style:normal}
+
+.playbtn{
+  width:96px;height:96px;border-radius:50%;background:var(--accent-dim);
+  display:flex;align-items:center;justify-content:center;font-size:36px;
+  border:1px solid var(--accent);transition:transform .1s;
+}
+.playbtn:hover{transform:scale(1.04)}
+.playbtn.small{width:44px;height:44px;font-size:19px}
+.playbtn:disabled{opacity:.4;transform:none;cursor:not-allowed}
+
+.grades{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.grade{
+  padding:11px 8px;border-radius:var(--radius-sm);border:1px solid var(--line);
+  background:var(--panel);text-align:center;line-height:1.35;
+}
+.grade:hover{border-color:var(--accent)}
+.grade b{display:block;font-size:14px;font-weight:600}
+.grade span{display:block;font-size:11.5px;color:var(--fg-faint);margin-top:2px}
+.grade[data-g="0"]:hover{border-color:var(--bad)}
+
+.typerow{width:100%;max-width:660px;display:flex;flex-direction:column;gap:10px}
+.typerow input{
+  font-family:var(--mono);font-size:18px;padding:13px 15px;text-align:center;
+}
+.diff{font-family:var(--mono);font-size:19px;letter-spacing:.5px;word-break:break-word}
+.diff .hit{color:var(--ok)}
+.diff .miss{color:var(--bad);text-decoration:underline wavy}
+.diff .extra{color:var(--warn);opacity:.7}
+
+.kbd{
+  display:inline-block;padding:1px 6px;border-radius:5px;border:1px solid var(--line);
+  background:var(--panel-2);font-family:var(--mono);font-size:11.5px;color:var(--fg-dim);
+}
+
+/* ------------------------------------------------------------ 训练包 */
+.lesson{
+  display:flex;align-items:flex-start;gap:12px;padding:13px 15px;
+  border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:var(--panel);margin-bottom:9px;
+}
+.lesson .t{font-weight:600}
+.lesson .meta{font-size:12.5px;color:var(--fg-dim);margin-top:3px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chip{
+  font-size:11.5px;padding:2px 8px;border-radius:20px;
+  border:1px solid var(--line);color:var(--fg-dim);
+}
+.chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
+.chip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}
+.chip.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+
+.example{
+  border:1px solid var(--line);border-radius:var(--radius-sm);
+  padding:13px 15px;margin-bottom:10px;background:var(--panel);
+}
+.example .en{font-size:17px;font-weight:500}
+.example .zh{font-size:13.5px;color:var(--fg-dim);margin-top:5px}
+.example .variants{font-size:12.5px;color:var(--fg-faint);margin-top:6px}
+.chanbtns{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+.chanbtns button{
+  font-size:12.5px;padding:4px 11px;border-radius:20px;
+  border:1px solid var(--line);color:var(--fg-dim);
+}
+.chanbtns button:hover{border-color:var(--accent);color:var(--fg)}
+
+table.self{width:100%;border-collapse:collapse;font-size:13.5px}
+table.self td{padding:7px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+table.self td:first-child{white-space:nowrap;color:var(--fg-dim);padding-right:14px}
+
+.spin{
+  display:inline-block;width:13px;height:13px;border-radius:50%;
+  border:2px solid var(--line);border-top-color:var(--accent);
+  animation:spin .7s linear infinite;vertical-align:-2px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.empty{text-align:center;color:var(--fg-dim);padding:46px 20px}
+.empty b{display:block;font-size:16px;color:var(--fg);margin-bottom:6px;font-weight:600}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><b>Etude</b><span>句子五通道语言训练器</span></div>
+  <nav id="nav">
+    <button data-view="study">训练</button>
+    <button data-view="lessons">训练包</button>
+    <button data-view="settings">设置</button>
+  </nav>
+  <div class="spacer"></div>
+  <span class="badge" id="health">连接中…</span>
+  <button class="iconbtn" id="theme" title="切换深浅色">◐</button>
+</header>
+<div id="banner"></div>
+
+<main id="app"></main>
+
+<script>
+"use strict";
+
+// 必须和后端 app/__init__.py 里的 __version__ 一致。
+// 有测试盯着这一条 —— 否则这行常量会变成天天误报的噪音，
+// 用户很快学会无视它，那还不如没有。
+const APP_VERSION = "0.0.1";
+
+// ----------------------------------------------------------------- 工具
+
+const $ = (sel, root) => (root || document).querySelector(sel);
+
+function el(tag, attrs, children) {
+  const node = document.createElement(tag);
+  if (attrs) {
+    for (const key of Object.keys(attrs)) {
+      const value = attrs[key];
+      if (value === null || value === undefined || value === false) continue;
+      if (key === "class") node.className = value;
+      else if (key === "text") node.textContent = value;
+      else if (key.slice(0, 2) === "on") {
+        // 事件名必须转小写：addEventListener 的类型串是**大小写敏感**的，
+        // "Click" / "Input" 这种写法不会报错、也不会触发 ——
+        // 界面照常画出来，只是一点什么都没反应。
+        node.addEventListener(key.slice(2).toLowerCase(), value);
+      }
+      else node.setAttribute(key, value);
+    }
+  }
+  for (const child of children || []) {
+    if (child === null || child === undefined || child === false) continue;
+    node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+  }
+  return node;
+}
+
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+// 所有请求走这里，统一把「错误 + 下一步方向」画成同一种块。
+async function api(path, options) {
+  const opts = Object.assign({ headers: { "Content-Type": "application/json" } }, options || {});
+  const resp = await fetch(path, opts);
+  const text = await resp.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (e) { data = { error: text }; }
+  if (!resp.ok) {
+    const err = new Error((data && data.error) || ("HTTP " + resp.status));
+    err.hint = (data && data.hint) || "";
+    err.status = resp.status;
+    throw err;
+  }
+  return data;
+}
+
+function errorBlock(err) {
+  const box = el("div", { class: "err" });
+  box.appendChild(el("b", { text: err.message || String(err) }));
+  if (err.hint) box.appendChild(el("div", { text: err.hint }));
+  return box;
+}
+
+function humanTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return "刚刚";
+  if (diff < 3600) return Math.floor(diff / 60) + " 分钟前";
+  if (diff < 86400) return Math.floor(diff / 3600) + " 小时前";
+  return Math.floor(diff / 86400) + " 天前";
+}
+
+// ------------------------------------------------------------- 状态与外壳
+
+const state = {
+  view: "study",
+  health: null,
+  config: null,
+  catalog: null,
+  queue: [],
+  cursor: 0,
+  current: null,       // 当前卡片的完整数据
+  revealed: false,
+  typed: "",
+  typedResult: null,
+  // 这一张卡这次用第几种中文说法。在 fetchCard 时定下来，
+  // 之后同一张卡反复 render 都用同一个 —— 否则每次翻面中文都会变，
+  // 读起来像界面在抖。（换一张卡就重新随机。）
+  variantIndex: 0,
+  busy: false,
+  sessionDone: 0,
+};
+
+function setBanner(level, html) {
+  const banner = $("#banner");
+  banner.className = level || "";
+  clear(banner);
+  if (level && html) banner.appendChild(typeof html === "string" ? document.createTextNode(html) : html);
+}
+
+const VIEWS = ["study", "lessons", "settings"];
+
+function setView(view) {
+  if (VIEWS.indexOf(view) < 0) view = "study";
+  state.view = view;
+  // 地址栏跟着走：刷新后还停在同一页，也能被直接链接过来。
+  // 在这里改 hash 会触发 hashchange，靠下面那个比对把重复渲染挡掉。
+  if (location.hash.slice(1) !== view) location.hash = view;
+  for (const btn of document.querySelectorAll("#nav button")) {
+    btn.setAttribute("aria-current", String(btn.dataset.view === view));
+  }
+  render();
+}
+
+function viewFromHash() {
+  const name = location.hash.slice(1);
+  return VIEWS.indexOf(name) >= 0 ? name : "study";
+}
+
+// --------------------------------------------------------------- 训练视图
+
+const CHANNEL_LABEL = {
+  read: "阅读 · 文字 → 场景",
+  listen: "听力 · 声音 → 场景",
+  speak: "口语 · 场景 → 说出口",
+  type: "打字 · 场景 → 打出来",
+  build: "造句 · 换词造新句",
+};
+
+// 每种通道第一次遇到时给一句「该怎么练」。这些不是装饰 ——
+// 理论明确要求的操作方式（不读出声、不翻译、过程中不思考）必须说出来，
+// 否则用户会用他习惯的方式（翻译 + 默读）把训练做废。
+const CHANNEL_TIPS = {
+  read: "看英文，让场景自己浮出来。不要读出声，不要想中文。",
+  listen: "只听声音，直接进入场景。中间不要经过图片或中文。",
+  speak: "看场景，用英文说出来（真的出声）。说完再看原文。",
+  type: "看场景，把英文打出来。打完自动比对。",
+  build: "换掉一个成分，造出一个新句子。造的句子要能出声念出来。",
+};
+
+function audioPath(name) {
+  return "/api/audio/" + encodeURIComponent(name);
+}
+
+let currentAudio = null;
+function playAudio(name) {
+  if (!name) return false;
+  if (currentAudio) { try { currentAudio.pause(); } catch (e) { /* 忽略 */ } }
+  currentAudio = new Audio(audioPath(name));
+  currentAudio.play().catch(() => { /* 浏览器可能拦自动播放，用户会自己点 */ });
+  return true;
+}
+
+function renderStudy(main) {
+  const wrap = el("div", { class: "session" });
+
+  if (!state.queue.length) {
+    const box = el("div", { class: "empty" }, [
+      el("b", { text: "今天没有待练的卡了" }),
+      el("div", { text: "可以去「训练包」里自由练，或者生成一个新包。" }),
+    ]);
+    wrap.appendChild(box);
+    const row = el("div", { class: "row" }, [
+      el("button", { class: "btn primary", onClick: () => setView("lessons"), text: "去生成训练包" }),
+      el("button", { class: "btn", onClick: loadQueue, text: "刷新队列" }),
+    ]);
+    wrap.appendChild(row);
+    main.appendChild(wrap);
+    return;
+  }
+
+  const total = state.queue.length;
+  const pos = Math.min(state.cursor + 1, total);
+
+  const bar = el("div", { class: "sessionbar" }, [
+    el("span", { text: "第 " + pos + " / " + total + " 张" }),
+  ]);
+  const prog = el("div", { class: "progress" }, [
+    el("i", { style: "width:" + Math.round(((pos - 1) / total) * 100) + "%" }),
+  ]);
+  bar.appendChild(prog);
+  bar.appendChild(el("span", { text: "本次已练 " + state.sessionDone }));
+  wrap.appendChild(bar);
+
+  if (state.cursor >= total) {
+    const done = el("div", { class: "stage" }, [
+      el("div", { class: "chan", text: "本轮结束" }),
+      el("div", { class: "prompt-zh", text: "练完了 " + state.sessionDone + " 张卡。" }),
+      el("div", { class: "task", text: "理论要的是「不同例子的重复」——明天再来，遇到的是新的例子，不是今天这几句。" }),
+    ]);
+    wrap.appendChild(done);
+    wrap.appendChild(el("div", { class: "row" }, [
+      el("button", { class: "btn primary", onClick: () => { state.cursor = 0; state.sessionDone = 0; loadQueue(); }, text: "刷新队列" }),
+      el("button", { class: "btn", onClick: () => setView("lessons"), text: "回训练包" }),
+    ]));
+    main.appendChild(wrap);
+    return;
+  }
+
+  const entry = state.queue[state.cursor];
+  if (!state.current || state.current.card.id !== entry.id) {
+    wrap.appendChild(el("div", { class: "stage" }, [el("div", { class: "spin" }), el("div", { class: "task", text: "正在取这张卡…" })]));
+    main.appendChild(wrap);
+    fetchCard(entry.id);
+    return;
+  }
+
+  const data = state.current;
+  const card = data.card;
+  const lesson = data.lesson || {};
+  const ex = data.example;
+
+  const stage = el("div", { class: "stage" });
+  stage.appendChild(el("div", { class: "chan", text: CHANNEL_LABEL[card.channel] || card.channel }));
+
+  if (card.channel === "read") buildRead(stage, data);
+  else if (card.channel === "listen") buildListen(stage, data);
+  else if (card.channel === "speak") buildSpeak(stage, data);
+  else if (card.channel === "type") buildType(stage, data);
+  else buildBuild(stage, data);
+
+  wrap.appendChild(stage);
+  wrap.appendChild(gradeRow(card, data.srs_preview || {}));
+  wrap.appendChild(el("div", { class: "faint", style: "text-align:center" }, [
+    el("span", { class: "kbd", text: "空格" }), " 翻面　",
+    el("span", { class: "kbd", text: "1" }), " 没想起来　",
+    el("span", { class: "kbd", text: "2" }), " 吃力　",
+    el("span", { class: "kbd", text: "3" }), " 正常　",
+    el("span", { class: "kbd", text: "4" }), " 秒答",
+  ]));
+
+  main.appendChild(wrap);
+}
+
+function sceneBox(lesson, ex) {
+  return el("div", { class: "scenebox" }, [
+    el("div", { text: lesson.target ? "目标：" + lesson.target : "" }),
+    el("div", { style: "margin-top:6px" }, [el("em", { text: pickZh(ex) || "（这条没有场景描述）" })]),
+    ex && ex.scene_en ? el("div", { style: "margin-top:6px;opacity:.75", text: ex.scene_en }) : null,
+    ex && ex.register ? el("div", { style: "margin-top:6px", text: "语域：" + ex.register }) : null,
+  ]);
+}
+
+// 「输出始终一致」的逆向应用：同一句话每次给一个**不一样的中文说法**，
+// 这样大脑没法把英文锁死到某一个固定中文上，也就没法靠中译英蒙混过去。
+// 取法由 state.variantIndex 定，保证同一张卡在同一次显示里是稳定的。
+function pickZh(ex) {
+  if (!ex) return "";
+  const variants = (ex.zh_variants || []).filter(Boolean);
+  if (!variants.length) return ex.scene_zh || "";
+  if (variants.length === 1) return variants[0];
+  const policy = ((state.config || {}).study || {}).zh_variant_policy || "rotate";
+  if (policy === "fixed") return ex.scene_zh || variants[0];
+  return variants[state.variantIndex % variants.length];
+}
+
+function buildRead(stage, data) {
+  const ex = data.example;
+  stage.appendChild(el("div", { class: "prompt-en", text: ex ? ex.sentence : "" }));
+  if (!state.revealed) {
+    stage.appendChild(el("div", { class: "task", text: CHANNEL_TIPS.read }));
+    stage.appendChild(el("button", { class: "btn", onClick: reveal, text: "想好了，看场景" }));
+  } else {
+    stage.appendChild(el("hr"));
+    stage.appendChild(sceneBox(data.lesson, ex));
+  }
+}
+
+function buildListen(stage, data) {
+  const ex = data.example;
+  const hasAudio = !!(ex && ex.audio_path);
+  const btn = el("button", {
+    class: "playbtn", disabled: !hasAudio, title: hasAudio ? "再听一遍" : "这条没有语音",
+    text: hasAudio ? "▶" : "×",
+    onClick: () => playAudio(ex && ex.audio_path),
+  });
+  stage.appendChild(btn);
+  if (!hasAudio) {
+    stage.appendChild(el("div", { class: "task", text: "这条例句没有生成语音，可以先去训练包里点「补语音」。" }));
+  }
+  if (!state.revealed) {
+    stage.appendChild(el("div", { class: "task", text: CHANNEL_TIPS.listen }));
+    stage.appendChild(el("button", { class: "btn", onClick: reveal, text: "想好了，看原文" }));
+  } else {
+    stage.appendChild(el("hr"));
+    stage.appendChild(el("div", { class: "answer", text: ex ? ex.sentence : "" }));
+    stage.appendChild(sceneBox(data.lesson, ex));
+  }
+}
+
+function buildSpeak(stage, data) {
+  const ex = data.example;
+  if (!state.revealed) {
+    stage.appendChild(el("div", { class: "prompt-scene", text: sceneText(ex) }));
+    stage.appendChild(el("div", { class: "task", text: CHANNEL_TIPS.speak }));
+    stage.appendChild(el("button", { class: "btn", onClick: reveal, text: "说完了，看原文" }));
+  } else {
+    stage.appendChild(el("div", { class: "answer", text: ex ? ex.sentence : "" }));
+    if (ex && ex.audio_path) {
+      stage.appendChild(el("button", {
+        class: "playbtn small", text: "▶", title: "听一遍对照发音",
+        onClick: () => playAudio(ex.audio_path),
+      }));
+    }
+    stage.appendChild(sceneBox(data.lesson, ex));
+  }
+}
+
+function sceneText(ex) {
+  if (!ex) return "（没有例句）";
+  return pickZh(ex);
+}
+
+function buildType(stage, data) {
+  const ex = data.example;
+  const sentence = ex ? ex.sentence : "";
+
+  if (!state.revealed) {
+    stage.appendChild(el("div", { class: "prompt-scene", text: sceneText(ex) }));
+    const row = el("div", { class: "typerow" });
+    const input = el("input", {
+      type: "text", value: state.typed, placeholder: "把英文打出来…",
+      autocomplete: "off", autocapitalize: "off", spellcheck: "false",
+      onInput: (e) => { state.typed = e.target.value; },
+      onKeydown: (e) => { if (e.key === "Enter") submitTyped(); },
+    });
+    row.appendChild(input);
+    row.appendChild(el("button", { class: "btn primary", onClick: submitTyped, text: "提交（Enter）" }));
+    row.appendChild(el("div", { class: "task", text: CHANNEL_TIPS.type }));
+    stage.appendChild(row);
+    setTimeout(() => input.focus(), 30);
+  } else {
+    stage.appendChild(el("div", { class: "answer", text: sentence }));
+    if (state.typedResult) stage.appendChild(renderDiff(state.typedResult));
+    if (ex && ex.audio_path) {
+      stage.appendChild(el("button", {
+        class: "playbtn small", text: "▶", title: "听一遍",
+        onClick: () => playAudio(ex.audio_path),
+      }));
+    }
+    stage.appendChild(sceneBox(data.lesson, ex));
+  }
+}
+
+function submitTyped() {
+  if (!state.current || !state.current.example) return;
+  state.typedResult = diffWords(state.typed.trim(), state.current.example.sentence);
+  state.revealed = true;
+  render();
+}
+
+function buildBuild(stage, data) {
+  const ex = data.example;
+  const swaps = (data.swaps || []).filter((s) => s.role);
+  stage.appendChild(el("div", { class: "prompt-en", text: ex ? ex.sentence : "" }));
+
+  const labels = { subject: "主语", verb: "谓语", object: "宾语" };
+  const need = swaps.map((s) => labels[s.role] || s.role);
+  stage.appendChild(el("div", {
+    class: "task",
+    text: need.length
+      ? "分别替换「" + need.join("」「") + "」，各造一个新句子。先自己想，再看参考。"
+      : "换掉句子里任意一个成分，造一个新句子。先自己想，再看参考。",
+  }));
+
+  if (!state.revealed) {
+    stage.appendChild(el("button", { class: "btn", onClick: reveal, text: "造好了，看参考" }));
+    return;
+  }
+  if (!swaps.length) {
+    stage.appendChild(el("div", { class: "task", text: "这个包没有生成替换参考（模型没给出 swaps）。造句依然可以自己练。" }));
+    return;
+  }
+  stage.appendChild(el("hr"));
+  for (const sw of swaps) {
+    const box = el("div", { class: "scenebox", style: "text-align:left;max-width:620px" });
+    box.appendChild(el("div", {
+      style: "color:var(--accent);font-size:12.5px;letter-spacing:1px",
+      text: (labels[sw.role] || sw.role) + "：" + (sw.original || ""),
+    }));
+    if (sw.samples && sw.samples.length) {
+      for (const s of sw.samples) box.appendChild(el("div", { text: "· " + s }));
+    } else if (sw.candidates && sw.candidates.length) {
+      box.appendChild(el("div", { text: "可换：" + sw.candidates.join(" / ") }));
+    }
+    stage.appendChild(box);
+  }
+}
+
+// 逐词的简单差异比对。不做最小编辑距离 —— 学习工具里
+// 「哪几个词对了/错了」比「相似度 73%」有用得多。
+function diffWords(typed, target) {
+  const norm = (s) => s.toLowerCase().replace(/[^a-z0-9' ]/g, "").replace(/\s+/g, " ").trim();
+  const a = norm(typed).split(" ").filter(Boolean);
+  const b = norm(target).split(" ").filter(Boolean);
+  const parts = [];
+  let hits = 0;
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const ta = a[i], tb = b[i];
+    if (ta && tb && ta === tb) { parts.push({ kind: "hit", text: tb }); hits++; }
+    else if (ta === undefined) { parts.push({ kind: "miss", text: tb }); }
+    else if (tb === undefined) { parts.push({ kind: "extra", text: ta }); }
+    else { parts.push({ kind: "miss", text: tb }); }
+  }
+  const total = Math.max(b.length, 1);
+  return { parts, hits, total, exact: norm(typed) === norm(target) };
+}
+
+function renderDiff(result) {
+  const box = el("div", { class: "diff" });
+  result.parts.forEach((p, i) => {
+    if (i) box.appendChild(document.createTextNode(" "));
+    box.appendChild(el("span", { class: p.kind, text: p.text }));
+  });
+  const note = result.exact
+    ? "完全一致。"
+    : "对了 " + result.hits + " / " + result.total + " 个词。红色是漏掉或打错的，黄色是多打的。";
+  return el("div", { class: "col", style: "align-items:center;gap:8px" }, [
+    box, el("div", { class: "task", text: note }),
+  ]);
+}
+
+function gradeRow(card, preview) {
+  const order = [0, 1, 2, 3];
+  const row = el("div", { class: "grades" });
+  for (const g of order) {
+    const info = preview[g] || preview[String(g)] || {};
+    const btn = el("button", { class: "grade", "data-g": String(g), onClick: () => grade(g) }, [
+      el("b", { text: info.label || ["没想起来", "吃力", "正常", "秒答"][g] }),
+      el("span", { text: info.human || "" }),
+    ]);
+    if (!state.revealed && g !== 0) btn.setAttribute("disabled", "disabled");
+    if (!state.revealed && g !== 0) btn.style.opacity = ".4";
+    row.appendChild(btn);
+  }
+  return row;
+}
+
+function reveal() {
+  if (!state.current) return;
+  state.revealed = true;
+  const ex = state.current.example;
+  // 听力卡翻面即把原文念一遍：把「声音」和「文字」在这里对上，
+  // 而不是让用户自己去想刚才听到的是什么。
+  if (state.current.card.channel === "listen" && ex && ex.audio_path) playAudio(ex.audio_path);
+  render();
+}
+
+async function fetchCard(cardId) {
+  try {
+    state.current = await api("/api/cards/" + cardId);
+    state.revealed = false;
+    state.typed = "";
+    state.typedResult = null;
+    // 换一张卡就换一种中文说法 —— 但同一张卡内部保持一致。
+    const variants = (state.current.example && state.current.example.zh_variants) || [];
+    state.variantIndex = variants.length > 1 ? Math.floor(Math.random() * variants.length) : 0;
+  } catch (err) {
+    // 卡片取不到（比如刚被删了）——跳过，不要让整个会话卡在这里。
+    state.current = null;
+    state.queue.splice(state.cursor, 1);
+    setBanner("warn", "有一张卡取不到，已跳过：" + err.message);
+  }
+  render();
+}
+
+async function grade(g) {
+  if (state.busy || !state.current) return;
+  const started = performance.now();
+  state.busy = true;
+  try {
+    const seconds = Math.max(0, (performance.now() - started) / 1000);
+    await api("/api/cards/" + state.current.card.id + "/grade", {
+      method: "POST",
+      body: JSON.stringify({ grade: g, seconds: seconds }),
+    });
+    state.sessionDone++;
+    state.cursor++;
+    state.current = null;
+    render();
+    if (state.cursor < state.queue.length) fetchCard(state.queue[state.cursor].id);
+  } catch (err) {
+    setBanner("bad", err.message + (err.hint ? "　→ " + err.hint : ""));
+  } finally {
+    state.busy = false;
+  }
+}
+
+async function loadQueue() {
+  try {
+    const data = await api("/api/queue?limit=40");
+    state.queue = data.cards || [];
+    state.cursor = 0;
+    state.current = null;
+    if (state.queue.length) fetchCard(state.queue[0].id);
+    else render();
+  } catch (err) {
+    setBanner("bad", "取队列失败：" + err.message);
+  }
+}
+
+// ------------------------------------------------------------- 训练包视图
+
+function renderLessons(main) {
+  main.appendChild(el("h1", { text: "训练包" }));
+  main.appendChild(el("p", {
+    class: "lead",
+    text: "输入一个词、短语或句子，程序会生成一组不同上下文的例句，并把每一条铺成五种练法。",
+  }));
+
+  const form = el("div", { class: "card" });
+  const input = el("input", {
+    type: "text", id: "target-input", placeholder: "例如：appreciate　/　in the long run　/　I'd rather stay home tonight.",
+    onKeydown: (e) => { if (e.key === "Enter") createLesson(); },
+  });
+  form.appendChild(el("label", { class: "field" }, [el("span", { text: "要练的东西" }), input]));
+  const row = el("div", { class: "row" });
+  const btn = el("button", { class: "btn primary", id: "create-btn", onClick: createLesson, text: "生成训练包" });
+  row.appendChild(btn);
+  row.appendChild(el("span", { class: "faint", text: "生成要几十秒（调模型 + 合成语音），可以同时丢好几个进去。" }));
+  form.appendChild(row);
+  const msg = el("div", { id: "create-msg" });
+  form.appendChild(msg);
+  main.appendChild(form);
+
+  const listCard = el("div", { class: "card", id: "lesson-list" });
+  listCard.appendChild(el("div", { class: "spin" }));
+  main.appendChild(listCard);
+  loadLessons();
+}
+
+async function createLesson() {
+  const input = $("#target-input");
+  const msg = $("#create-msg");
+  if (!input || !msg) return;
+  const target = input.value.trim();
+  clear(msg);
+  if (!target) {
+    msg.appendChild(el("div", { class: "err", text: "先输入要练的内容。" }));
+    return;
+  }
+  const btn = $("#create-btn");
+  if (btn) btn.disabled = true;
+  try {
+    const data = await api("/api/lessons", { method: "POST", body: JSON.stringify({ target: target }) });
+    input.value = "";
+    msg.appendChild(el("div", {
+      class: "hint",
+      text: data.reused ? "这个目标已经在生成中了，直接复用它。" : "已经开工，往下看进度。",
+    }));
+    loadLessons();
+    pollLesson(data.lesson_id);
+  } catch (err) {
+    msg.appendChild(errorBlock(err));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// 每个训练包一个独立的轮询定时器。
+// 不能用「一个共享的 pollTimer」——那样后提交的包会把前一个的轮询取消掉，
+// 表现是前几个包永远停在「正在生成」，而后端其实早就跑完了。
+const pollTimers = new Map();
+
+function pollLesson(lessonId) {
+  const existing = pollTimers.get(lessonId);
+  if (existing) clearTimeout(existing);
+  pollTimers.set(lessonId, setTimeout(() => tickPoll(lessonId), 1500));
+}
+
+async function tickPoll(lessonId) {
+  pollTimers.delete(lessonId);
+  try {
+    const job = await api("/api/lessons/" + lessonId + "/job");
+    loadLessons();
+    if (job.status !== "ready" && job.status !== "failed") pollLesson(lessonId);
+  } catch (err) {
+    // 轮询失败不该把界面弄乱，安静地停掉就好 ——
+    // 用户手动刷新或重开程序时会重新拿到真实状态。
+  }
+}
+
+async function loadLessons() {
+  const host = $("#lesson-list");
+  if (!host) return;
+  try {
+    const data = await api("/api/lessons");
+    clear(host);
+    const lessons = data.lessons || [];
+    if (!lessons.length) {
+      host.appendChild(el("div", { class: "empty" }, [
+        el("b", { text: "还没有训练包" }),
+        el("div", { text: "在上面输入一个词或一句话，生成第一个。" }),
+      ]));
+      return;
+    }
+    for (const lesson of lessons) host.appendChild(lessonRow(lesson, data.stats));
+  } catch (err) {
+    clear(host);
+    host.appendChild(errorBlock(err));
+  }
+}
+
+function lessonRow(lesson, stats) {
+  const box = el("div", { class: "lesson" });
+  const left = el("div", { class: "grow" });
+
+  const title = el("div", { class: "t", text: lesson.target });
+  left.appendChild(title);
+
+  const meta = el("div", { class: "meta" });
+  meta.appendChild(document.createTextNode(humanTime(lesson.created_at) + "　"));
+  meta.appendChild(document.createTextNode("· " + (lesson.language || "en")));
+  left.appendChild(meta);
+
+  const chips = el("div", { class: "chips" });
+  if (lesson.status === "generating") {
+    const job = lesson.job;
+    const step = job && job.step ? job.step : "正在生成";
+    chips.appendChild(el("span", { class: "chip warn" }, [el("i", { class: "spin" }), " " + step]));
+  } else if (lesson.status === "failed") {
+    chips.appendChild(el("span", { class: "chip bad", text: "生成失败" }));
+  } else {
+    chips.appendChild(el("span", { class: "chip ok", text: lesson.example_count + " 条例句" }));
+    chips.appendChild(el("span", { class: "chip", text: lesson.card_count + " 张卡" }));
+    chips.appendChild(el("span", { class: "chip", text: "已练 " + lesson.introduced_count }));
+    if (lesson.kind) chips.appendChild(el("span", { class: "chip", text: lesson.kind }));
+  }
+  left.appendChild(chips);
+
+  if (lesson.status === "failed" && lesson.error) {
+    left.appendChild(el("div", { class: "err", style: "margin-top:10px", text: lesson.error }));
+  }
+  box.appendChild(left);
+
+  const actions = el("div", { class: "col", style: "align-items:flex-end" });
+  if (lesson.status === "ready") {
+    actions.appendChild(el("button", { class: "btn", onClick: () => openLesson(lesson.id), text: "打开" }));
+  } else   if (lesson.status === "failed") {
+    actions.appendChild(el("button", { class: "btn", onClick: () => retryLesson(lesson.id, lesson.target), text: "重试" }));
+  }
+  actions.appendChild(el("button", {
+    class: "btn ghost danger",
+    onClick: () => removeLesson(lesson.id, lesson.target),
+    text: "删除",
+  }));
+  box.appendChild(actions);
+  return box;
+}
+
+async function removeLesson(id, target) {
+  if (!confirm("删除「" + target + "」？例句、语音和复习记录都会一并删掉，不可恢复。")) return;
+  try {
+    await api("/api/lessons/" + id, { method: "DELETE" });
+    loadLessons();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function retryLesson(id, target) {
+  if (!confirm("重新生成「" + target + "」？\n\n会重新调模型、重新合成语音，覆盖现有的例句和复习进度。")) return;
+  try {
+    await api("/api/lessons/" + id + "/regenerate", { method: "POST" });
+    loadLessons();
+    pollLesson(id);
+  } catch (err) {
+    alert(err.message + (err.hint ? "\n" + err.hint : ""));
+  }
+}
+
+async function openLesson(id) {
+  setView("lessons");
+  const main = $("#app");
+  clear(main);
+  main.appendChild(el("div", { class: "row" }, [
+    el("button", { class: "btn", onClick: () => setView("lessons"), text: "← 返回" }),
+  ]));
+  const host = el("div", { id: "lesson-detail" });
+  main.appendChild(host);
+  host.appendChild(el("div", { class: "stage" }, [el("div", { class: "spin" })]));
+  try {
+    const lesson = await api("/api/lessons/" + id);
+    clear(host);
+    renderLessonDetail(host, lesson);
+  } catch (err) {
+    clear(host);
+    host.appendChild(errorBlock(err));
+  }
+}
+
+function renderLessonDetail(host, lesson) {
+  host.appendChild(el("h1", { text: lesson.target }));
+  const r = lesson.readiness || {};
+  host.appendChild(el("p", {
+    class: "lead",
+    text: (r.example_count || 0) + " 条例句 · " + (r.audio_ready || 0) + " 条有语音"
+      + (lesson.gloss ? "" : " · 缺英英释义"),
+  }));
+
+  if (r.problems && r.problems.length) {
+    const box = el("div", { class: "card tight" });
+    box.appendChild(el("div", { class: "faint", text: "素材还不齐：" + r.problems.join("；") }));
+    box.appendChild(el("div", { class: "row", style: "margin-top:10px" }, [
+      el("button", { class: "btn", onClick: () => redoAudio(lesson.id), text: "补语音" }),
+    ]));
+    host.appendChild(box);
+  }
+
+  if (lesson.gloss) {
+    host.appendChild(el("div", { class: "card" }, [
+      el("div", { class: "faint", text: "英英释义（不用中文，避免形成英文↔中文的对应）" }),
+      el("div", { style: "margin-top:6px;font-size:16px", text: lesson.gloss }),
+      lesson.ipa ? el("div", { class: "faint mono", style: "margin-top:6px", text: "/" + lesson.ipa.replace(/^\/|\/$/g, "") + "/" }) : null,
+      lesson.note ? el("div", { class: "hint", text: lesson.note }) : null,
+    ]));
+  }
+
+  host.appendChild(el("h2", { text: "例句与练法" }));
+  (lesson.examples || []).forEach((ex, i) => {
+    const box = el("div", { class: "example" });
+    const head = el("div", { class: "row" }, [
+      el("div", { class: "en grow", text: ex.sentence }),
+    ]);
+    if (ex.audio_path) {
+      head.appendChild(el("button", {
+        class: "playbtn small", text: "▶", title: "播放",
+        onClick: () => playAudio(ex.audio_path),
+      }));
+    } else {
+      head.appendChild(el("span", { class: "chip warn", text: "缺语音" }));
+    }
+    box.appendChild(head);
+    if (ex.scene_zh) box.appendChild(el("div", { class: "zh", text: ex.scene_zh }));
+    if (ex.scene_en) box.appendChild(el("div", { class: "zh", style: "opacity:.72", text: ex.scene_en }));
+    const variants = ex.zh_variants || [];
+    if (variants.length > 1) {
+      box.appendChild(el("div", {
+        class: "variants",
+        text: "同一个意思的其他说法（每次复习随机换一种，防止锁死到某个中文上）：" + variants.join("　/　"),
+      }));
+    }
+    const btns = el("div", { class: "chanbtns" });
+    for (const ch of ["read", "listen", "speak", "type", "build"]) {
+      btns.appendChild(el("button", {
+        onClick: () => practiceOne(lesson.id, ex.id, ch),
+        text: { read: "练阅读", listen: "练听力", speak: "练口语", type: "练打字", build: "练造句" }[ch],
+      }));
+    }
+    box.appendChild(btns);
+    host.appendChild(box);
+  });
+
+  if (lesson.swaps && lesson.swaps.length) {
+    host.appendChild(el("h2", { text: "造句替换参考" }));
+    const box = el("div", { class: "card" });
+    for (const sw of lesson.swaps) {
+      const line = el("div", { style: "margin-bottom:10px" });
+      line.appendChild(el("div", { class: "faint", text: (sw.role || "") + "：" + (sw.original || "") }));
+      for (const cand of sw.candidates || []) line.appendChild(el("div", { text: "· " + cand }));
+      for (const sample of sw.samples || []) {
+        line.appendChild(el("div", { class: "faint", text: "→ " + sample }));
+      }
+      box.appendChild(line);
+    }
+    host.appendChild(box);
+  }
+}
+
+async function redoAudio(id) {
+  try {
+    const result = await api("/api/lessons/" + id + "/audio", { method: "POST" });
+    alert("补了 " + result.ok + " 条语音。" + (result.failed && result.failed.length ? "\n失败 " + result.failed.length + " 条，详见日志。" : ""));
+    openLesson(id);
+  } catch (err) {
+    alert(err.message + (err.hint ? "\n" + err.hint : ""));
+  }
+}
+
+// 自由练：不进今天的队列，直接从训练包里挑一条例句 + 一个通道来练。
+// 卡片 id 从详情接口返回的 cards 清单里查 —— 不自己推算。
+// 推算依赖「卡片 id 连续且顺序固定」，而重新生成过一次这个前提就没了，
+// 结果是**不报错、只是练到了别的那张卡上**。
+async function practiceOne(lessonId, exampleId, channel) {
+  try {
+    const lesson = await api("/api/lessons/" + lessonId);
+    const card = (lesson.cards || []).find(
+      (c) => c.example_id === exampleId && c.channel === channel
+    );
+    if (!card) {
+      alert("这个包还没有对应的卡片。如果刚刚在重新生成，等它跑完再试。");
+      return;
+    }
+    state.queue = [{ id: card.id }];
+    state.cursor = 0;
+    state.current = null;
+    state.sessionDone = 0;
+    setView("study");
+    fetchCard(card.id);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+// --------------------------------------------------------------- 设置视图
+
+function renderSettings(main) {
+  main.appendChild(el("h1", { text: "设置" }));
+  main.appendChild(el("p", { class: "lead", text: "密钥只存在你自己电脑上的 config.json 里，不会上传、也不会进 git。" }));
+
+  const cfg = state.config || {};
+  const llm = cfg.llm || {};
+  const tts = cfg.tts || {};
+  const presets = (state.catalog && state.catalog.llm_presets) || {};
+
+  // ---- 大模型
+  const llmCard = el("div", { class: "card" });
+  llmCard.appendChild(el("h2", { style: "margin-top:0", text: "大模型（生成例句素材）" }));
+
+  const presetSel = el("select", { id: "llm-preset", onChange: onPresetChange });
+  for (const key of Object.keys(presets)) {
+    const opt = el("option", { value: key, text: presets[key].label });
+    if (key === llm.preset) opt.selected = true;
+    presetSel.appendChild(opt);
+  }
+  llmCard.appendChild(el("label", { class: "field" }, [el("span", { text: "厂商" }), presetSel]));
+
+  const presetHint = el("div", { class: "hint", id: "preset-hint", text: (presets[llm.preset] || {}).hint || "" });
+  llmCard.appendChild(presetHint);
+
+  const baseInput = el("input", { type: "text", id: "llm-base", value: llm.base_url || "", placeholder: "https://api.deepseek.com/v1" });
+  llmCard.appendChild(el("label", { class: "field" }, [el("span", { text: "接口地址 base_url" }), baseInput]));
+
+  const keyInput = el("input", {
+    type: "password", id: "llm-key", value: "",
+    placeholder: llm.api_key_set ? "已保存，留空表示不改动" : "粘贴 API Key",
+  });
+  llmCard.appendChild(el("label", { class: "field" }, [el("span", { text: "API Key" }), keyInput]));
+
+  const modelInput = el("input", { type: "text", id: "llm-model", value: llm.model || "", placeholder: "deepseek-chat" });
+  llmCard.appendChild(el("label", { class: "field" }, [el("span", { text: "模型名" }), modelInput]));
+
+  const llmRow = el("div", { class: "row" }, [
+    el("button", { class: "btn primary", onClick: saveLLM, text: "保存" }),
+    el("button", { class: "btn", id: "test-llm", onClick: testLLM, text: "测试连接" }),
+  ]);
+  llmCard.appendChild(llmRow);
+  llmCard.appendChild(el("div", { id: "llm-msg" }));
+  main.appendChild(llmCard);
+
+  // ---- 语音
+  const ttsCard = el("div", { class: "card" });
+  ttsCard.appendChild(el("h2", { style: "margin-top:0", text: "语音（例句发音）" }));
+
+  const engineSel = el("select", { id: "tts-engine", onChange: toggleTTSFields });
+  for (const [value, label] of [["edge", "Edge 语音（免费，需要联网）"], ["openai", "大模型语音（需要额外配置）"]]) {
+    const opt = el("option", { value: value, text: label });
+    if (value === (tts.engine || "edge")) opt.selected = true;
+    engineSel.appendChild(opt);
+  }
+  ttsCard.appendChild(el("label", { class: "field" }, [el("span", { text: "语音引擎" }), engineSel]));
+
+  const voices = ((state.catalog && state.catalog.tts_voices) || {}).edge || [];
+  const voiceSel = el("select", { id: "tts-voice" });
+  for (const v of voices) {
+    const opt = el("option", { value: v.id, text: v.label });
+    if (v.id === tts.voice) opt.selected = true;
+    voiceSel.appendChild(opt);
+  }
+  ttsCard.appendChild(el("label", { class: "field", id: "voice-field" }, [el("span", { text: "音色" }), voiceSel]));
+
+  const rateInput = el("input", { type: "text", id: "tts-rate", value: tts.rate || "+0%", placeholder: "+0%" });
+  ttsCard.appendChild(el("label", { class: "field", id: "rate-field" }, [el("span", { text: "语速（如 -10% / +0%）" }), rateInput]));
+
+  const oa = tts.openai || {};
+  const oaBox = el("div", { id: "openai-tts" });
+  const oaBase = el("input", { type: "text", id: "tts-base", value: oa.base_url || "", placeholder: "https://api.openai.com/v1" });
+  const oaKey = el("input", { type: "password", id: "tts-key", value: "", placeholder: oa.api_key_set ? "已保存，留空表示不改动" : "API Key" });
+  const oaModel = el("input", { type: "text", id: "tts-model", value: oa.model || "tts-1", placeholder: "tts-1" });
+  const oaVoice = el("input", { type: "text", id: "tts-openai-voice", value: oa.voice || "alloy", placeholder: "alloy" });
+  oaBox.appendChild(el("label", { class: "field" }, [el("span", { text: "base_url" }), oaBase]));
+  oaBox.appendChild(el("label", { class: "field" }, [el("span", { text: "API Key" }), oaKey]));
+  oaBox.appendChild(el("label", { class: "field" }, [el("span", { text: "模型" }), oaModel]));
+  oaBox.appendChild(el("label", { class: "field" }, [el("span", { text: "音色" }), oaVoice]));
+  ttsCard.appendChild(oaBox);
+
+  const ttsRow = el("div", { class: "row" }, [
+    el("button", { class: "btn primary", onClick: saveTTS, text: "保存" }),
+    el("button", { class: "btn", id: "test-tts", onClick: testTTS, text: "试听一句" }),
+  ]);
+  ttsCard.appendChild(ttsRow);
+  ttsCard.appendChild(el("div", { id: "tts-msg" }));
+  main.appendChild(ttsCard);
+
+  // ---- 学习
+  const study = cfg.study || {};
+  const studyCard = el("div", { class: "card" });
+  studyCard.appendChild(el("h2", { style: "margin-top:0", text: "学习" }));
+  const exCount = el("input", { type: "number", id: "study-examples", value: study.examples_per_lesson || 8, min: "3", max: "20" });
+  studyCard.appendChild(el("label", { class: "field" }, [el("span", { text: "每个训练包生成几条例句（理论要的是「多例子的重复」，太少不够）" }), exCount]));
+  const newPerDay = el("input", { type: "number", id: "study-new", value: study.new_per_day || 20, min: "0", max: "200" });
+  studyCard.appendChild(el("label", { class: "field" }, [el("span", { text: "每天最多引入多少张新卡" }), newPerDay]));
+  const zhPolicy = el("select", { id: "study-zh" });
+  for (const [value, label] of [["rotate", "每次随机换一种说法（推荐）"], ["fixed", "固定显示场景描述"]]) {
+    const opt = el("option", { value: value, text: label });
+    if (value === (study.zh_variant_policy || "rotate")) opt.selected = true;
+    zhPolicy.appendChild(opt);
+  }
+  studyCard.appendChild(el("label", { class: "field" }, [el("span", { text: "中文提示的显示方式" }), zhPolicy]));
+  studyCard.appendChild(el("div", { class: "row" }, [
+    el("button", { class: "btn primary", onClick: saveStudy, text: "保存" }),
+  ]));
+  studyCard.appendChild(el("div", { id: "study-msg" }));
+  main.appendChild(studyCard);
+
+  // ---- 自检与数据
+  const sysCard = el("div", { class: "card" });
+  sysCard.appendChild(el("h2", { style: "margin-top:0", text: "自检与数据" }));
+  const selfHost = el("div", { id: "selfcheck" });
+  sysCard.appendChild(selfHost);
+  sysCard.appendChild(el("div", { class: "row", style: "margin-top:12px" }, [
+    el("button", { class: "btn", onClick: runSelfCheck, text: "跑一遍自检" }),
+    el("button", { class: "btn", onClick: doBackup, text: "备份数据库" }),
+  ]));
+  main.appendChild(sysCard);
+
+  toggleTTSFields();
+  runSelfCheck();
+}
+
+async function onPresetChange(e) {
+  const name = e.target.value;
+  try {
+    const data = await api("/api/config/preset", { method: "POST", body: JSON.stringify({ preset: name }) });
+    state.config = data.config;
+    const hint = $("#preset-hint");
+    const presets = (state.catalog && state.catalog.llm_presets) || {};
+    if (hint) hint.textContent = (presets[name] || {}).hint || "";
+    const base = $("#llm-base"), model = $("#llm-model");
+    if (base) base.value = (data.config.llm || {}).base_url || "";
+    if (model) model.value = (data.config.llm || {}).model || "";
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function toggleTTSFields() {
+  const engine = ($("#tts-engine") || {}).value || "edge";
+  const box = $("#openai-tts");
+  const voiceField = $("#voice-field");
+  const rateField = $("#rate-field");
+  if (box) box.style.display = engine === "openai" ? "block" : "none";
+  if (voiceField) voiceField.style.display = engine === "edge" ? "block" : "none";
+  if (rateField) rateField.style.display = engine === "edge" ? "block" : "none";
+}
+
+function readValue(id) {
+  const node = document.getElementById(id);
+  return node ? node.value.trim() : "";
+}
+
+async function saveLLM() {
+  const msg = $("#llm-msg");
+  clear(msg);
+  const patch = { llm: { base_url: readValue("llm-base"), model: readValue("llm-model") } };
+  const key = readValue("llm-key");
+  if (key) patch.llm.api_key = key;   // 留空 = 不改动，避免把已存的 key 抹掉
+  try {
+    const data = await api("/api/config", { method: "POST", body: JSON.stringify(patch) });
+    state.config = data.config;
+    const input = $("#llm-key");
+    if (input) { input.value = ""; input.placeholder = "已保存，留空表示不改动"; }
+    msg.appendChild(el("div", { class: "hint", text: "已保存。" }));
+  } catch (err) {
+    msg.appendChild(errorBlock(err));
+  }
+}
+
+async function saveTTS() {
+  const msg = $("#tts-msg");
+  clear(msg);
+  const engine = readValue("tts-engine") || "edge";
+  const patch = {
+    tts: {
+      engine: engine,
+      voice: readValue("tts-voice") || "en-US-AriaNeural",
+      rate: readValue("tts-rate") || "+0%",
+      openai: {
+        base_url: readValue("tts-base"),
+        model: readValue("tts-model") || "tts-1",
+        voice: readValue("tts-openai-voice") || "alloy",
+      },
+    },
+  };
+  const key = readValue("tts-key");
+  if (key) patch.tts.openai.api_key = key;
+  try {
+    const data = await api("/api/config", { method: "POST", body: JSON.stringify(patch) });
+    state.config = data.config;
+    const input = $("#tts-key");
+    if (input) { input.value = ""; input.placeholder = "已保存，留空表示不改动"; }
+    msg.appendChild(el("div", { class: "hint", text: "已保存。已生成的语音不受影响，新生成的会用新音色。" }));
+  } catch (err) {
+    msg.appendChild(errorBlock(err));
+  }
+}
+
+async function saveStudy() {
+  const msg = $("#study-msg");
+  clear(msg);
+  const patch = {
+    study: {
+      examples_per_lesson: Number(readValue("study-examples")) || 8,
+      new_per_day: Number(readValue("study-new")) || 20,
+      zh_variant_policy: readValue("study-zh") || "rotate",
+    },
+  };
+  try {
+    await api("/api/config", { method: "POST", body: JSON.stringify(patch) });
+    msg.appendChild(el("div", { class: "hint", text: "已保存。" }));
+  } catch (err) {
+    msg.appendChild(errorBlock(err));
+  }
+}
+
+async function testLLM() {
+  const msg = $("#llm-msg");
+  const btn = $("#test-llm");
+  clear(msg);
+  if (btn) btn.disabled = true;
+  const box = el("div", { class: "hint" }, [el("i", { class: "spin" }), " 正在连模型…"]);
+  msg.appendChild(box);
+  try {
+    const data = await api("/api/config/test-llm", { method: "POST" });
+    clear(msg);
+    msg.appendChild(el("div", { class: "hint", text: "连通了，往返 " + data.seconds + " 秒。" }));
+  } catch (err) {
+    clear(msg);
+    msg.appendChild(errorBlock(err));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function testTTS() {
+  const msg = $("#tts-msg");
+  const btn = $("#test-tts");
+  clear(msg);
+  if (btn) btn.disabled = true;
+  msg.appendChild(el("div", { class: "hint" }, [el("i", { class: "spin" }), " 正在合成…"]));
+  try {
+    const data = await api("/api/config/test-tts", { method: "POST" });
+    clear(msg);
+    msg.appendChild(el("div", { class: "hint", text: "合成成功（" + data.bytes + " 字节）。" }));
+    const name = await findLatestAudio();
+    if (name) playAudio(name);
+  } catch (err) {
+    clear(msg);
+    msg.appendChild(errorBlock(err));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// 试听：拿任意一个已有音频来播。没有就静默跳过 ——
+// 试听只是锦上添花，不该因为「库里没音频」而报错。
+async function findLatestAudio() {
+  try {
+    const data = await api("/api/lessons");
+    for (const lesson of data.lessons || []) {
+      if (lesson.example_count > 0) {
+        const detail = await api("/api/lessons/" + lesson.id);
+        for (const ex of detail.examples || []) {
+          if (ex.audio_path) return ex.audio_path;
+        }
+      }
+    }
+  } catch (err) { /* 忽略 */ }
+  return null;
+}
+
+async function runSelfCheck() {
+  const host = $("#selfcheck");
+  if (!host) return;
+  clear(host);
+  host.appendChild(el("div", { class: "faint" }, [el("i", { class: "spin" }), " 检查中…"]));
+  try {
+    const report = await api("/api/selfcheck");
+    clear(host);
+    const table = el("table", { class: "self" });
+    for (const item of report.items || []) {
+      const chip = el("span", {
+        class: "chip " + (item.level === "ok" ? "ok" : item.level === "warn" ? "warn" : "bad"),
+        text: item.level === "ok" ? "正常" : item.level === "warn" ? "注意" : "有问题",
+      });
+      const right = el("td");
+      right.appendChild(chip);
+      right.appendChild(el("div", { style: "margin-top:4px", text: item.detail }));
+      if (item.hint) right.appendChild(el("div", { class: "faint", style: "margin-top:4px", text: "→ " + item.hint }));
+      table.appendChild(el("tr", null, [el("td", { text: item.name }), right]));
+    }
+    host.appendChild(table);
+  } catch (err) {
+    clear(host);
+    host.appendChild(errorBlock(err));
+  }
+}
+
+async function doBackup() {
+  try {
+    const data = await api("/api/backup", { method: "POST", body: JSON.stringify({}) });
+    alert("已备份到：\n" + data.path + "\n\n" + Math.round(data.bytes / 1024) + " KB");
+  } catch (err) {
+    alert(err.message + (err.hint ? "\n" + err.hint : ""));
+  }
+}
+
+// ------------------------------------------------------------------ 键盘
+
+document.addEventListener("keydown", (e) => {
+  if (state.view !== "study") return;
+  const tag = (e.target && e.target.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+  if (e.key === " " || e.key === "Enter") {
+    if (!state.revealed) { e.preventDefault(); reveal(); }
+    return;
+  }
+  if (["1", "2", "3", "4"].includes(e.key)) {
+    e.preventDefault();
+    grade(Number(e.key) - 1);
+  }
+});
+
+// ------------------------------------------------------------ 错误上屏
+
+// 这是个零构建的项目：任何一处抛异常，「症状」都会是一个安静的、半截的界面。
+// 所以把没接住的错误直接摆到页面上 —— 用户能把它复制给你，
+// 而不是只能描述「点了没反应」。
+function showFatal(what, detail) {
+  const banner = document.getElementById("banner");
+  if (!banner) return;
+  banner.className = "bad";
+  clear(banner);
+  banner.appendChild(document.createTextNode(what + "：" + detail));
+  banner.appendChild(document.createElement("br"));
+  banner.appendChild(document.createTextNode(
+    "把这一行连同截图发给作者。按 F12 打开控制台能看到完整的调用栈。"
+  ));
+}
+
+window.addEventListener("error", (e) => {
+  showFatal("界面出了一个错", (e && e.message) || String(e));
+});
+
+window.addEventListener("unhandledrejection", (e) => {
+  const reason = e && e.reason;
+  const text = reason && reason.message ? reason.message : String(reason);
+  showFatal("有一个操作没做完", text);
+});
+
+// -------------------------------------------------------------- 启动
+
+async function boot() {
+  // 主题：跟随系统，用户手动选过就听用户的。
+  const saved = localStorage.getItem("etude-theme");
+  if (saved) document.documentElement.setAttribute("data-theme", saved);
+  $("#theme").addEventListener("click", () => {
+    const current = document.documentElement.getAttribute("data-theme");
+    const isDark = current ? current === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    const next = isDark ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("etude-theme", next);
+  });
+
+  for (const btn of document.querySelectorAll("#nav button")) {
+    btn.addEventListener("click", () => setView(btn.dataset.view));
+  }
+
+  try {
+    const health = await api("/api/health");
+    state.health = health;
+    const badge = $("#health");
+    clear(badge);
+    badge.textContent = "v" + health.version + " · " + health.mode;
+    badge.className = "badge ok";
+    // 前端常量 vs 后端版本。不一致时明确弹出来 ——
+    // 这种不一致几乎总是「端口上有个旧进程」，而不是文案问题。
+    if (health.version !== APP_VERSION) {
+      setBanner("bad",
+        "版本不一致：界面是 " + APP_VERSION + "，后端是 " + health.version +
+        "（pid " + health.pid + "，数据目录 " + health.data_dir + "）。" +
+        "多半是端口上还留着一个旧进程，关掉它再重开程序。");
+    }
+  } catch (err) {
+    const badge = $("#health");
+    badge.textContent = "连不上后端";
+    badge.className = "badge bad";
+    setBanner("bad", "连不上后端服务：" + err.message);
+  }
+
+  try { state.config = await api("/api/config"); } catch (err) { /* 设置页会再报 */ }
+  try { state.catalog = await api("/api/catalog"); } catch (err) { /* 同上 */ }
+
+  // 浏览器前进/后退也要跟着切页面 —— 不然地址栏和内容会对不上。
+  window.addEventListener("hashchange", () => {
+    const next = viewFromHash();
+    if (next !== state.view) setView(next);
+  });
+
+  setView(viewFromHash());
+  loadQueue();
+}
+
+function render() {
+  const main = $("#app");
+  clear(main);
+  if (state.view === "study") renderStudy(main);
+  else if (state.view === "lessons") renderLessons(main);
+  else renderSettings(main);
+}
+
+boot();
+</script>
+</body>
+</html>

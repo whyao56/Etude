@@ -1,0 +1,29 @@
+# Etude 运行依赖
+#
+# 装法：
+#     python -m venv .venv
+#     .venv/Scripts/activate          # Windows
+#     pip install -r requirements.txt
+#     python run_etude.py
+#
+# 为什么写下界又写上界：下界是「我实际测过的版本」，上界防的是大版本变更
+# 带来的破坏性改动。没写下界的话，某天有人在 Python 3.14 上装到 fastapi 1.0
+# 出了问题，报的 bug 我没法复现。
+
+# --- 服务端 ---
+fastapi>=0.110,<1.0
+uvicorn>=0.29,<1.0
+pydantic>=2.6,<3.0
+httpx>=0.27,<1.0
+
+# --- 语音合成 ---
+# edge-tts 走的是微软 Edge 浏览器在线朗读的那个接口，不需要密钥。
+# 它必须联网才能合成 —— 合成后的 mp3 会落到本地缓存，之后就断网可用了。
+edge-tts>=6.1,<8.0
+
+# --- 原生窗口（可选）---
+# 装不上不影响使用：desktop.py 拿不到 webview 就返回 False，
+# run_etude.py 会退回系统默认浏览器打开界面，功能一模一样。
+# 真正决定它能不能用的是 WebView2 运行时（Win10 1803+ 通常自带），
+# 不是这个 pip 包。
+pywebview>=5.0,<7.0 ; sys_platform == "win32"

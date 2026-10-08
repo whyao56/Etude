@@ -1,0 +1,36 @@
+# 换行符归一。
+# 这个项目全是文本源文件，统一用 LF 存进仓库。不这样的话，
+# Windows 上克隆回来是 CRLF、Linux 上是 LF，`git diff` 会满屏都是
+# 「整文件改写」的假变更。*.ps1 / *.cmd 将来如果加了，要保持 CRLF。
+* text=auto eol=lf
+
+*.py    text eol=lf
+*.js    text eol=lf
+*.html  text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.txt   text eol=lf
+*.spec  text eol=lf
+
+*.ps1   text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+# 二进制：别做任何行尾转换，也别尝试 diff。
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.mp3   binary
+*.zip   binary
+*.exe   binary
+*.dll   binary
+*.pyd   binary
+*.pyz   binary
+
+# 文档截图变化频繁，不在 diff 里展开，也不计入语言统计。
+docs/images/* linguist-documentation
+backend/frontend/index.html linguist-language=HTML

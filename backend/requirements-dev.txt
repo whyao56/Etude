@@ -1,0 +1,15 @@
+# 开发/打包依赖 —— 运行 Etude 本身不需要这些。
+#
+#     pip install -r requirements.txt -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest>=8.0,<10.0
+
+# 打包。注意 PyInstaller 的版本要锁得比其他包紧：它的 hooks 和
+# 内部 API 在小版本之间也会变，同一个 spec 换个版本可能就打不出东西来。
+# build_exe.py 里核对归档那一步就是专门用来发现这种「打出来了但少了模块」的。
+pyinstaller>=6.6,<7.0
+
+# 代码检查（可选）。项目里没有强制 lint 关卡，守卫是 scripts/check_js.py。
+ruff>=0.4,<1.0

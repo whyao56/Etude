@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+  workflow_dispatch:
+
+# 只要读仓库的权限就够了。打包和发版是本地脚本（scripts/make_release.py）做的，
+# 不走 Actions —— 这样发布凭据永远不经过第三方。
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: 测试 (${{ matrix.os }} / py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: 装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-dev.txt
+
+      - name: 测试
+        working-directory: backend
+        run: python -m pytest tests/ -q
+
+      # 守卫单独再跑一次，为了在日志里**单独可见**。
+      # 它在 pytest 里也被跑（test_guards.py），但那一条失败时会淹没在
+      # 几百行输出里，而前端问题恰恰是最需要一眼看到的那类。
+      - name: 前端守卫（调用点 + 事件名大小写）
+        run: python scripts/check_js.py
+
+  # 打包本身不在 CI 里做：PyInstaller 出包要几分钟、产物几百 MB，
+  # 而且 Actions 的产物没有 Release 附件那个稳定 URL。
+  # 这里只做一件 CI 能做得比本地更好的事 —— **在干净的机器上验证能装能跑**。
+  clean-install:
+    name: 干净环境冒烟
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: 只装运行依赖（不装 dev）
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: 自检（不联网、不配模型）
+        working-directory: backend
+        env:
+          ETUDE_DATA_DIR: ${{ runner.temp }}/etude-smoke
+        run: python run_etude.py --check
+
+      - name: 版本号一致性
+        run: |
+          python -c "import sys; sys.path.insert(0,'backend'); from app import __version__; print('版本', __version__)"
+
+  secrets:
+    name: 隐私红线
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 仓库里不能有配置/数据/密钥
+        run: |
+          set -e
+          bad=0
+          for f in config.json etude.sqlite3 etude.sqlite3-wal; do
+            if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+              echo "::error::$f 被提交进仓库了"
+              bad=1
+            fi
+          done
+          # 常见密钥前缀。写了真实 key 的文档/脚本不该进仓库。
+          if git grep -nE 'sk-[A-Za-z0-9]{20,}' -- . ':!docs' ':!*.md' ':!scripts/openai_stub.py'; then
+            echo "::error::疑似真实 API Key"
+            bad=1
+          fi
+          exit $bad
+
+      - name: 界面里不能出现 innerHTML 拼接
+        shell: bash
+        run: |
+          # 例句里有用户输入的目标词，拼 innerHTML 就是 XSS 入口。
+          # 允许出现 innerHTML 的地方只有一处：清空容器（= ""）。
+          if grep -nE 'innerHTML\s*=' backend/frontend/index.html | grep -vE '=\s*(""|\x27\x27)\s*;'; then
+            echo "::warning::index.html 出现了非清空用途的 innerHTML 赋值，请确认没有拼接用户输入"
+          fi

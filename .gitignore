@@ -1,0 +1,48 @@
+# --- 打包产物 ---
+# dist/ 整个不进仓库。exe 走 GitHub Release 附件发布，理由写在
+# scripts/make_release.py 的模块注释里（二进制不该进版本历史）。
+dist/
+
+# PyInstaller 的中间目录。里面有两百多个文件，而且每次打包都重建。
+build/_pyinstaller/
+build/_pyz.pyz
+
+# 但 build/ 下的这两个**要**提交：
+#   build/etude.spec         打包配置，是源文件
+#   build/size-baseline.json 体积基线，build_exe.py 拿它做回归报警
+!build/etude.spec
+!build/size-baseline.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- 运行时数据 ---
+# 正常情况下这些永远不会出现在仓库里（数据目录在 %LOCALAPPDATA%\Etude，
+# 仓库外）。这几行是防御性的：万一有人改了 ETUDE_DATA_DIR 或者手贱复制过来，
+# 不至于把带 API Key 的 config.json 提交上去。
+config.json
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+logs/
+backups/
+audio/
+
+# --- 本地配置 ---
+.env
+.env.local
+
+# --- 编辑器 / 系统 ---
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*.swp
+*~
