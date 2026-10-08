@@ -143,7 +143,15 @@ def call(method: str, url: str, tok: str, data: dict | None = None) -> tuple[int
 
 
 def make_zip(tag_version: str, repo: str, dist: Path | None = None) -> Path:
-    """把打包产物打成一个 zip，内含使用说明。"""
+    """把打包产物打成一个 zip，内含使用说明。
+
+    **这个 zip 是可复现的**：所有条目的时间戳都写成同一个固定值。
+    不这么做会怎样（真踩到过）：``zipfile.writestr(name, text)``
+    建 ZipInfo 时用的是 ``time.localtime()[:6]``，也就是**打包那一刻**，
+    于是同样一份产物、同样的文件名，两次打包得到两个不同的 SHA256。
+    后果是 ``--check`` 算出的校验和拿去印进发行说明之后，
+    正式发版那一次又算出另一个值 —— 版本说明永远对不上产物。
+    """
     dist = dist or products.newest_output()
     if dist is None or not dist.is_dir():
         raise SystemExit(products.describe_dist() + "\n先跑 scripts/build_exe.py。")
@@ -154,12 +162,25 @@ def make_zip(tag_version: str, repo: str, dist: Path | None = None) -> Path:
 
     note = README_IN_ZIP.format(version=tag_version, repo=repo)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
-        zf.writestr(f"Etude-{tag_version}/使用说明.txt", note)
+        _add(zf, f"Etude-{tag_version}/使用说明.txt", note.encode("utf-8"))
         for path in sorted(dist.rglob("*")):
             if path.is_file():
                 arc = Path(f"Etude-{tag_version}") / path.relative_to(dist)
-                zf.write(path, str(arc).replace("\\", "/"))
+                _add(zf, str(arc).replace("\\", "/"), path.read_bytes())
     return zip_path
+
+
+# ZIP 的时间戳是 DOS 格式，最小年份就是 1980 —— 用比它早的值会被钳到 1979，
+# 反倒让部分解压工具报错。
+FIXED_TIME = (1980, 1, 1, 0, 0, 0)
+
+
+def _add(zf: zipfile.ZipFile, arcname: str, data: bytes) -> None:
+    """按固定时间戳写一个条目，好让整个包的哈希可复现。"""
+    info = zipfile.ZipInfo(arcname, date_time=FIXED_TIME)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o100644 << 16
+    zf.writestr(info, data, compresslevel=9)
 
 
 def find_release(tok: str, repo: str, tag: str) -> dict | None:
