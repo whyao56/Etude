@@ -83,6 +83,28 @@ DEFAULTS: dict[str, Any] = {
         "type": True,
         "build": True,
     },
+    "pronounce": {
+        # 跟读录音（0.1.0）。enabled=False 时界面上不出现录音入口 ——
+        # 远程桌面、虚拟机、没有麦克风的台式机上，点了必然失败；
+        # 与其让人对着一个永远报错的按钮，不如一开始就不给这个入口。
+        "enabled": True,
+        # auto = 配了转写服务就用词级对比，没配就只用声学指标（时长/停顿/音量）；
+        # acoustic = 永远只用声学指标；asr = 强制走转写（没配就在界面上说清楚）。
+        #
+        # 为什么要有 acoustic 这一档：转写服务是**可选的**，
+        # 而这个功能的承诺是「装上就能练」。
+        "mode": "auto",
+        # 录音留不留。默认留着 —— 「上礼拜和今天的我」才是跟读真正想给的东西，
+        # 但要在设置里能关（有人不想让机器里堆自己的声音）。
+        "save_recordings": True,
+        "asr": {
+            # 任意 OpenAI 兼容的 /audio/transcriptions（whisper-1 这类）。
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "",
+            "model": "whisper-1",
+            "language": "en",
+        },
+    },
     "server": {
         "port": 8977,
         "open_window": True,
@@ -100,6 +122,9 @@ _ENV_OVERRIDES: dict[str, tuple[str, str]] = {
     "ETUDE_IMAGE_BASE_URL": ("images", "llm", "base_url"),
     "ETUDE_IMAGE_API_KEY": ("images", "llm", "api_key"),
     "ETUDE_IMAGE_MODEL": ("images", "llm", "model"),
+    "ETUDE_ASR_BASE_URL": ("pronounce", "asr", "base_url"),
+    "ETUDE_ASR_API_KEY": ("pronounce", "asr", "api_key"),
+    "ETUDE_ASR_MODEL": ("pronounce", "asr", "model"),
 }
 
 
@@ -171,4 +196,6 @@ def public_view(config: dict | None = None) -> dict:
     cfg["llm"]["api_key_set"] = bool(llm_key.strip())
     cfg["tts"]["openai"]["api_key_set"] = bool(tts_key.strip())
     cfg["images"]["llm"]["api_key_set"] = bool(img_key.strip())
+    asr_key = cfg.get("pronounce", {}).get("asr", {}).pop("api_key", "") or ""
+    cfg["pronounce"]["asr"]["api_key_set"] = bool(asr_key.strip())
     return cfg

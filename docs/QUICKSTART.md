@@ -310,8 +310,8 @@ cd backend
 # 1. 全部测试
 python -m pytest tests/ -q
 
-# 2. 前端守卫（调用点 + 事件名大小写）
-python ../scripts/check_js.py
+# 2. 前端守卫（模块导入 / 图标名 / 类名与 CSS 对账 / 版本一致）
+python ../scripts/check_frontend.py
 
 # 3. 打包（含归档核对 + 冻结态自检）
 python ../scripts/build_exe.py

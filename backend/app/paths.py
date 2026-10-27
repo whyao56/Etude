@@ -167,6 +167,21 @@ def images_dir() -> Path:
     return d
 
 
+def recordings_dir() -> Path:
+    """跟读录音（0.1.0）。
+
+    单独一个目录而不是塞进 ``audio/``：``audio/`` 里全是「模型念的」，
+    这里全是「我念的」。混在一起之后，「把机器语音删掉重生成」这类操作
+    会顺手删掉用户自己攒了两个月的录音 —— 那是不可再生的东西。
+
+    录音同样按内容寻址（``<sha1 前 16 位>.wav``），同一个差不多的录音不会
+    存两份；文件名里不带时间，时间在数据库里。
+    """
+    d = writable_root() / "recordings"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def log_dir() -> Path:
     d = writable_root() / "logs"
     d.mkdir(parents=True, exist_ok=True)

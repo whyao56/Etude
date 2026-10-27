@@ -26,12 +26,20 @@ def test_health_can_identify_which_process_is_answering(client):
 
 
 def test_health_distinguishes_two_processes(monkeypatch):
-    """两个不同的实例必须能被区分开 —— 靠 pid 和启动时刻。"""
-    from app import api
+    """两个不同的实例必须能被区分开 —— 靠 pid 和启动时刻。
 
-    a = api.health()
-    monkeypatch.setattr(api, "STARTED_AT", api.STARTED_AT - 3600)
-    b = api.health()
+    0.1.0 起 ``health`` 住在 ``app/routes/meta.py``，启动时刻住在
+    ``app/runtime.py``；路由里是**属性访问**（``runtime.STARTED_AT``），
+    所以这里 patch 的是 runtime 上的那个浮点数。要是拆包时写成
+    ``from ..runtime import STARTED_AT``，patch 就再也影响不了接口 ——
+    测试会绿，而接口永远报同一个启动时刻。
+    """
+    from app import runtime
+    from app.routes import meta
+
+    a = meta.health()
+    monkeypatch.setattr(runtime, "STARTED_AT", runtime.STARTED_AT - 3600)
+    b = meta.health()
     assert a["pid"] == b["pid"]
     assert a["started_at"] != b["started_at"], "光看版本号分不出旧进程，启动时刻才能"
 

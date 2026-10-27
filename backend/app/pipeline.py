@@ -372,6 +372,61 @@ def normalize_outline(payload: dict, want: int) -> dict:
     }
 
 
+def normalize_targets(payload: dict, want: int) -> dict:
+    """整理「按主题出的一批目标」。
+
+    和另外两个 normalize 一样，防的是「不报错但结果不对」：
+    模型可能给重复项、可能把 ``{"target": ...}`` 退化成纯字符串、
+    也可能把主题名本身当成一条目标（「kitchen vocabulary」根本没法拿去造句）。
+    纯字符串那一档是**兼容而不是偷懒** —— 有的模型就是不肯按 schema 给对象。
+    """
+    if not isinstance(payload, dict):
+        raise llm.LLMError("模型返回的不是一个 JSON 对象。", "点一次重试。")
+
+    raw = payload.get("targets")
+    if not isinstance(raw, list):
+        raise llm.LLMError(
+            "模型返回里没有 targets 列表。", "点一次重试；反复如此就换个模型。"
+        )
+
+    from . import prompts
+
+    items: list[dict] = []
+    seen: set[str] = set()
+    for entry in raw:
+        if isinstance(entry, str):
+            entry = {"target": entry}
+        if not isinstance(entry, dict):
+            continue
+        target = str(entry.get("target") or "").strip()
+        if not target or len(target) > 300 or target.lower() in seen:
+            continue
+        seen.add(target.lower())
+
+        kind = str(entry.get("kind") or "").strip().lower()
+        if kind not in ("word", "phrase", "sentence"):
+            kind = prompts.classify_target(target)
+
+        items.append(
+            {
+                "target": target,
+                "kind": kind,
+                "domain": str(entry.get("domain") or "").strip(),
+                "why": str(entry.get("why") or "").strip(),
+            }
+        )
+
+    if not items:
+        raise llm.LLMError(
+            "模型给的目标清单是空的。", "点一次重试，或换一个更强的模型。"
+        )
+
+    return {
+        "note": str(payload.get("note") or "").strip(),
+        "targets": items[: max(want, 1)],
+    }
+
+
 def draft_plan(plan_id: int) -> dict:
     """只出大纲，不动任何素材。让用户能先看到「要学什么」再决定开不开工。
 

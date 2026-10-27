@@ -1,0 +1,1227 @@
+/* 各页自己的样式。
+ *
+ * 共享的（按钮、面板、表格、抽屉、提示条）在 components.css 里，
+ * 这里只写「训练/训练包/计划/卡片/设置」这五页独有的东西。
+ * 类名一律照 JS 里真实的写法，不再另起一套别名 ——
+ * 0.1.0 第一次跑冒烟时就是因为 CSS 和 JS 各写各的，界面看着像坏了。
+ */
+
+/* ================================================================== 训练 */
+
+.stage {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+  padding: 22px 26px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 顶上那一条：通道 · 目标 · 进度 */
+.stage-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8em;
+  color: var(--ink-3);
+  min-height: 22px;
+}
+
+.chan {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--r-xs);
+  background: var(--surface-3);
+  color: var(--ink-2);
+  font-size: 0.92em;
+  letter-spacing: 0.02em;
+}
+
+.target {
+  font-family: var(--serif);
+  font-size: 1.02em;
+  color: var(--ink-2);
+  letter-spacing: 0.01em;
+}
+
+.counter {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 题目区：场景、句子、输入框都放这儿 */
+.prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.scene {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prompt-scene {
+  font-family: var(--serif);
+  font-size: calc(var(--stage-fs) * 0.62);
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+/* 阅读通道直接给英文句子，这块是全页最该被看清的东西 */
+.prompt-en {
+  font-family: var(--serif);
+  font-size: var(--stage-fs);
+  line-height: var(--stage-lh);
+  color: var(--ink);
+  letter-spacing: -0.005em;
+}
+
+.task {
+  font-size: 0.86em;
+  color: var(--ink-3);
+  line-height: 1.6;
+}
+
+.scene-img {
+  width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.imgfail {
+  display: grid;
+  place-items: center;
+  min-height: 90px;
+  border-radius: var(--r-md);
+  border: 1px dashed var(--line-strong);
+  color: var(--ink-3);
+  font-size: 0.8em;
+  background: var(--surface-2);
+}
+
+/* 听力/跟读用的播放行 */
+.listen-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 0;
+}
+
+.play {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.88em;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.play:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.play.is-playing {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+/* 造句通道：换词提示 + 自己的句子 */
+.swaps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.swap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 0.84em;
+  color: var(--ink-2);
+}
+
+.swap .role {
+  font-size: 0.9em;
+  color: var(--ink-3);
+}
+
+.swap .from {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--bad) 55%, transparent);
+  color: var(--ink-3);
+}
+
+.swap .arrow {
+  color: var(--ink-3);
+}
+
+.swap .to {
+  color: var(--accent-2);
+  font-weight: 560;
+}
+
+.build-input {
+  width: 100%;
+  min-height: 84px;
+  font-family: var(--serif);
+  font-size: 1.1em;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+/* 打字通道：输入框 + 逐词对比 */
+.typerow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.typerow input {
+  font-family: var(--serif);
+  font-size: calc(var(--stage-fs) * 0.62);
+  padding: 12px 14px;
+}
+
+.diff-host {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 0.92em;
+  line-height: 1.7;
+}
+
+.diff-host .w {
+  padding: 2px 6px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  border: 1px solid transparent;
+}
+
+.diff-host .w.hit {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 35%, var(--line));
+}
+
+.diff-host .w.miss {
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 35%, var(--line));
+  background: var(--bad-soft);
+}
+
+.diff-host .w.extra {
+  color: var(--warn);
+  text-decoration: line-through;
+  opacity: 0.85;
+}
+
+/* 翻面后的答案 */
+.answer {
+  border-top: 1px dashed var(--line-strong);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: answer-in 0.16s ease;
+}
+
+@keyframes answer-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+.answer-en {
+  font-family: var(--serif);
+  font-size: calc(var(--stage-fs) * 0.76);
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.ipa {
+  font-family: var(--mono);
+  font-size: 0.82em;
+  color: var(--ink-3);
+}
+
+.gloss,
+.scene-en,
+.scene-zh {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.88em;
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+
+.gloss .lab,
+.scene-en .lab {
+  flex: none;
+  font-size: 0.82em;
+  color: var(--ink-3);
+  min-width: 4.2em;
+}
+
+.variants {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9em;
+  color: var(--ink-2);
+}
+
+.variant {
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+}
+
+.variant.is-picked {
+  border-left-color: var(--accent);
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------- 四档评分 */
+
+/* 贴在视口底部的评分区。
+   翻面后答案可能很长，评分键被挤到屏幕外就是「点了没反应」——
+   冒烟里真踩过这一次。 */
+.grader-wrap {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  margin-top: 14px;
+  padding: 10px 0 4px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--bg) 0%, transparent),
+    var(--bg) 42%
+  );
+}
+
+.grader {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.grade {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease, transform 0.08s ease, background 0.12s ease;
+}
+
+.grade:hover {
+  border-color: currentColor;
+  transform: translateY(-1px);
+}
+
+.grade:active {
+  transform: translateY(0);
+}
+
+.grade .num {
+  font-family: var(--mono);
+  font-size: 0.74em;
+  color: var(--ink-3);
+}
+
+.grade .label {
+  font-size: 0.95em;
+  font-weight: 600;
+}
+
+.grade .when {
+  font-size: 0.78em;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.grade.g0 {
+  color: var(--g0);
+}
+
+.grade.g1 {
+  color: var(--g1);
+}
+
+.grade.g2 {
+  color: var(--g2);
+}
+
+.grade.g3 {
+  color: var(--g3);
+}
+
+.grade.g0:hover {
+  background: var(--g0-soft);
+}
+
+.grade.g1:hover {
+  background: var(--g1-soft);
+}
+
+.grade.g2:hover {
+  background: var(--g2-soft);
+}
+
+.grade.g3:hover {
+  background: var(--g3-soft);
+}
+
+/* 没翻面时后三档压暗一点，但**不画成禁用** ——
+   禁用的按钮点不动，而这里就是要能点（点了会先给看答案）。 */
+.grade.is-pending .when {
+  opacity: 0;
+}
+
+.grade .need {
+  display: none;
+}
+
+.grade.is-pending .need {
+  display: block;
+  font-size: 0.72em;
+  color: var(--ink-3);
+}
+
+.stage-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.stage-foot .grow {
+  flex: 1;
+}
+
+/* 练完这一批 */
+.done-page {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 30px 26px;
+}
+
+.done-page h2 {
+  font-family: var(--serif);
+  font-size: calc(var(--stage-fs) * 0.68);
+  color: var(--ink);
+}
+
+.stat-row {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat b {
+  font-family: var(--serif);
+  font-size: 1.6em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat span {
+  font-size: 0.8em;
+  color: var(--ink-3);
+}
+
+/* ---------------------------------------------------------- 跟读面板 */
+
+.pronounce {
+  border-top: 1px dashed var(--line-strong);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pronounce-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn.mic {
+  gap: 8px;
+}
+
+.btn.mic.is-recording {
+  background: var(--bad-soft);
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.btn.mic.is-busy {
+  opacity: 0.7;
+}
+
+/* 音量条：录音时让人知道「声音进去了」 */
+.meter {
+  position: relative;
+  width: 96px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.meter > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.08s linear;
+}
+
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.score-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.score {
+  font-family: var(--serif);
+  font-size: 2em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.unit {
+  font-size: 0.8em;
+  color: var(--ink-3);
+}
+
+.mode {
+  font-size: 0.78em;
+  color: var(--ink-3);
+  padding: 2px 8px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.item-row {
+  display: grid;
+  /* 名字 / 值 / 进度条 三列：值那列定宽，进度条自己伸缩，
+     这样四行的条子左端是对齐的，眼睛能横着扫过去比长短。 */
+  grid-template-columns: 8em 5.5em 1fr;
+  align-items: center;
+  gap: 3px 12px;
+  font-size: 0.84em;
+  padding: 4px 0;
+}
+
+.item-row .name {
+  color: var(--ink-2);
+}
+
+.item-row .value {
+  color: var(--ink);
+  font-weight: 560;
+}
+
+.item-row .detail {
+  grid-column: 2 / -1;
+  font-size: 0.94em;
+  color: var(--ink-3);
+  line-height: 1.35;
+}
+
+.item-bar {
+  grid-column: 3;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.item-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+
+.item-row.is-bad .item-bar > i {
+  background: var(--bad);
+}
+
+.item-row.is-warn .item-bar > i {
+  background: var(--warn);
+}
+
+.item-row.is-skip .item-bar {
+  opacity: 0.35;
+}
+
+.heard {
+  font-size: 0.86em;
+  color: var(--ink-2);
+  font-family: var(--mono);
+}
+
+.advice {
+  font-size: 0.86em;
+  color: var(--ink-2);
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+}
+
+/* ================================================================== 训练包 */
+
+.builder {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.builder .row {
+  align-items: center;
+}
+
+#target-input {
+  flex: 1;
+  min-width: 12em;
+  font-size: 1.02em;
+}
+
+/* 批量建包：一次贴一串，或者给个主题让模型出清单 */
+.batch {
+  border-top: 1px dashed var(--line);
+  padding-top: 10px;
+}
+
+.batch > summary {
+  cursor: pointer;
+  font-size: 0.86em;
+  color: var(--ink-2);
+  list-style: none;
+}
+
+.batch > summary::-webkit-details-marker {
+  display: none;
+}
+
+.batch > summary::before {
+  content: "+ ";
+  color: var(--accent);
+}
+
+.batch[open] > summary::before {
+  content: "− ";
+}
+
+.batch-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.batch-body textarea {
+  min-height: 76px;
+  font-family: var(--mono);
+  font-size: 0.88em;
+}
+
+.batch .rule {
+  font-size: 0.78em;
+  color: var(--ink-3);
+}
+
+/* 主题草案：模型给的清单，勾了再建 */
+.draft {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.draft-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84em;
+  color: var(--ink-2);
+}
+
+.draft-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.draft-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 0.84em;
+  cursor: pointer;
+}
+
+.draft-row[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.draft-target {
+  font-family: var(--serif);
+}
+
+/* 列表区 */
+.list-block {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lesson-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lesson-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.lesson-row:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-1);
+}
+
+.lesson-row.small {
+  padding: 9px 12px;
+}
+
+.lesson-row.ready {
+  border-left: 3px solid var(--ok);
+}
+
+.lesson-row.failed {
+  border-left: 3px solid var(--bad);
+}
+
+.lesson-row.generating {
+  border-left: 3px solid var(--accent);
+}
+
+.lesson-open {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+}
+
+.lesson-open .t {
+  font-family: var(--serif);
+  font-size: 1.08em;
+  color: var(--ink);
+}
+
+.lesson-open .meta {
+  font-size: 0.78em;
+  color: var(--ink-3);
+}
+
+.rowacts {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+/* ---------------------------------------------------------- 训练包详情 */
+
+.target-big {
+  font-family: var(--serif);
+  font-size: calc(var(--stage-fs) * 0.82);
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.problems {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.problem {
+  font-size: 0.84em;
+  color: var(--warn);
+}
+
+.example-row {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: 14px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.example-row:first-of-type {
+  border-top: none;
+}
+
+.example-media {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.example-media img {
+  width: 132px;
+  height: 92px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  cursor: zoom-in;
+  background: var(--surface-2);
+}
+
+.example-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.example-en {
+  font-family: var(--serif);
+  font-size: 1.12em;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.example-zh {
+  font-size: 0.88em;
+  color: var(--ink-2);
+}
+
+.example-scene {
+  font-size: 0.82em;
+  color: var(--ink-3);
+  line-height: 1.55;
+}
+
+/* 五个通道的入口：一排小按钮 */
+.chanbtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.chanbtn {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 0.78em;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.chanbtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chanbtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ================================================================== 计划 */
+
+.plan-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.plan-open {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+}
+
+.plan-open b {
+  font-size: 1em;
+  color: var(--ink);
+}
+
+.plan-open .meta {
+  font-size: 0.78em;
+  color: var(--ink-3);
+}
+
+.plan-row .bar {
+  width: 120px;
+  flex: none;
+}
+
+/* 大纲：一条一条勾 */
+.outline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 52vh;
+  overflow: auto;
+  margin: 8px 0 10px;
+  padding-right: 4px;
+}
+
+.outline-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.outline-row:hover {
+  background: var(--surface-2);
+}
+
+.outline-row input {
+  flex: none;
+  margin-top: 3px;
+}
+
+.outline-target {
+  font-family: var(--serif);
+  font-size: 1em;
+  color: var(--ink);
+  flex: none;
+  max-width: 42%;
+}
+
+.outline-why {
+  font-size: 0.82em;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+/* ================================================================== 卡片 */
+
+.filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.filters .input {
+  /* base.css 里 input/select 是 width:100%（竖排表单里对），
+     但这里是横排的筛选条 —— 不写死 width:auto 的话，三个控件会各占一整行。 */
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 9em;
+}
+
+.filters input[type="search"] {
+  flex: 1;
+  min-width: 12em;
+}
+
+.browser {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.browser-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.browser-head .hint {
+  flex: 1;
+}
+
+.browser .bulkbar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ================================================================== 设置 */
+
+.selfcheck {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84em;
+}
+
+.selfcheck td,
+.selfcheck th {
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.selfcheck td:first-child {
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  font-size: 0.86em;
+  margin: 0 0 12px;
+}
+
+.kv dt {
+  color: var(--ink-3);
+}
+
+.kv dd {
+  margin: 0;
+  color: var(--ink);
+  word-break: break-all;
+}
+
+/* ================================================================== 侧栏里的训练小结 */
+
+.side-session {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.side-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.tally {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.tally b {
+  font-family: var(--serif);
+  font-size: 1.5em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.tally span {
+  font-size: 0.76em;
+  color: var(--ink-3);
+}
+
+.hotkeys {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.76em;
+  color: var(--ink-3);
+}
+
+.hotkeys > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 侧栏收起后，只留下图标那一列 */
+html[data-side="collapsed"] .side-session .hotkeys,
+html[data-side="collapsed"] .side-session .tally span,
+html[data-side="collapsed"] .side-card .hint {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .exam-grid,
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stage {
+    padding: 16px 16px 12px;
+  }
+
+  .grader {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .example-row {
+    grid-template-columns: 1fr;
+  }
+
+  .example-media img {
+    width: 100%;
+    height: 140px;
+  }
+}
+
+/* ================================================================== 零碎 */
+
+/* 表格里勾选用的那一列，越窄越好 */
+/* 表格里那个勾选列。注意别写成裸 .pick —— .chip.pick 也带这个名字，
+   裸写会把这些可切换标签压成 2.2em 宽的小圆片、文字全挤到框外面去。 */
+.table .pick,
+td.pick,
+th.pick {
+  width: 2.2em;
+  text-align: center;
+}
+
+/* 可以来回切换的小标签（场合、配色、字号） */
+.chip.pick {
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+}
+
+.chip.pick[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+/* 打字通道打完之后的对比块 */
+.diff {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.88em;
+  color: var(--ink-2);
+}
+
+.diff .text {
+  font-family: var(--mono);
+}
+
+/* 跟读结果里「你自己念的」那一段 */
+.own {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.own .lab {
+  font-size: 0.78em;
+  color: var(--ink-3);
+}
+
+.own audio {
+  width: 100%;
+  height: 32px;
+}

@@ -24,6 +24,7 @@ from .paths import (
     images_dir,
     is_frozen,
     log_dir,
+    recordings_dir,
     writable_root,
     writable_root_source,
 )
@@ -58,17 +59,32 @@ def run(*, deep: bool = False) -> dict:
         )
 
     # ② 界面文件在不在。
+    #    0.1.0 起界面是「index.html + js/ + css/」，所以不能只查 index.html ——
+    #    只查那个文件的话，漏收 js 目录的包会显示「界面正常」然后白屏。
     index = frontend_dir() / "index.html"
-    if index.exists():
+    entry = frontend_dir() / "js" / "main.js"
+    if index.exists() and entry.exists():
         size = index.stat().st_size
-        items.append(_item("界面文件", "ok", f"{index}（{size / 1024:.0f} KB）"))
-    else:
+        modules = len(list((frontend_dir() / "js").rglob("*.js")))
+        items.append(
+            _item("界面文件", "ok", f"{index}（{size / 1024:.0f} KB）· {modules} 个模块")
+        )
+    elif not index.exists():
         items.append(
             _item(
                 "界面文件",
                 "fail",
                 f"找不到 {index}",
                 "这是打包时漏了资源，重试修不好。请重新安装完整发行包。",
+            )
+        )
+    else:
+        items.append(
+            _item(
+                "界面文件",
+                "fail",
+                f"找到了 index.html，但缺 {entry}",
+                "界面脚本没被一起打包进来。这是发行包的问题，重新安装完整包。",
             )
         )
 
@@ -196,6 +212,48 @@ def run(*, deep: bool = False) -> dict:
         items.append(_item("音频缓存", "ok", f"{count} 个文件"))
     except OSError as exc:
         items.append(_item("音频缓存", "fail", f"读不了：{exc}"))
+
+    # ⑦b 录音目录。跟读录音是**用户自己攒下来的东西**，丢了补不回来，
+    #     所以要单独确认这个目录写不进去时能被看见。
+    try:
+        recordings = recordings_dir()
+        recordings.mkdir(parents=True, exist_ok=True)
+        count = len(list(recordings.glob("*.wav")))
+        items.append(_item("跟读录音", "ok", f"{count} 段 · {recordings}"))
+    except OSError as exc:
+        items.append(
+            _item(
+                "跟读录音",
+                "warn",
+                f"录音目录写不进去：{exc}",
+                "跟读还能测，但录音不会在本地留下。检查数据目录权限。",
+            )
+        )
+
+    # ⑦c 发音训练当前处在哪一档。**最高只报 warn**：
+    #     没配转写服务时时空、停顿、音量照常测，功能并没有坏。
+    pron = cfg.get("pronounce") or {}
+    asr_cfg = dict(pron.get("asr") or {})
+    if not pron.get("enabled", True):
+        items.append(_item("发音训练", "ok", "设置里关掉了"))
+    elif str(asr_cfg.get("api_key") or "").strip():
+        items.append(
+            _item(
+                "发音训练",
+                "ok",
+                f"词级对比 · {asr_cfg.get('model') or '转写服务'}"
+                f" · 模式 {pron.get('mode') or 'auto'}",
+            )
+        )
+    else:
+        items.append(
+            _item(
+                "发音训练",
+                "warn",
+                "只测时长、停顿和音量（没配转写服务）",
+                "想要「内容对不对」的词级对比，去设置里填转写服务的地址和 key。",
+            )
+        )
 
     # ⑧ 场景配图。**这一项最高只报 warn** —— 图片不是训练的必需品，
     #    五条通道少了图照样能练。把它报成 fail 会让用户以为程序坏了。

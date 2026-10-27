@@ -1,305 +1,575 @@
 /**
- * 生成文档用的界面截图。
+ * 生成文档截图（0.1.0 新界面）。
  *
- * 为什么把它做成脚本而不是「手动截一次」：
- * README 里的截图一旦和当前版本对不上，就会开始误导人 ——
- * 上个项目的 README 上还挂着早已撤下的语音面板。**旧图比没有图更糟**，
- * 因为它看起来是可信的。
- *
- * 所以每次发版前跑一遍这个脚本，图就跟代码同步了。
+ * 和 0.0.x 的版本最大的不同：不再假设「界面上有个叫 setView 的全局函数」。
+ * 现在每张图都靠**真的操作**走到的 —— 点导航、按空格翻面、点评分、
+ * 点「练」进卡片 —— 所以截图本身也是一次验收：哪一步点不动，这里就出不来图。
  *
  * 用法：
- *     node scripts/screenshots.js http://127.0.0.1:8977 [输出目录]
- *
- * 需要先有一个跑起来的服务，并且里面已经有内容：
- * 几个生成完的训练包（带场景配图）、一个**大纲待确认**的学习计划。
- * 内容不够时脚本会直接报「等不到 xxx」而不是截一张空壳回去 ——
- * 空壳图同样是「看起来可信的错图」。
+ *   node scripts/screenshots.js                    # 连 127.0.0.1:8977，自己造数据
+ *   node scripts/screenshots.js --no-seed           # 用现成的数据
+ *   node scripts/screenshots.js --theme dark        # 只换默认配色
+ *   node scripts/screenshots.js --only 06,07        # 只出某几张（调试用）
  */
 
 "use strict";
 
+const { spawn } = require("child_process");
+const fs = require("fs");
+const os = require("os");
 const path = require("path");
+
 const { Browser, canReach, sleep } = require("./cdp");
 
-const BASE = (process.argv[2] || "http://127.0.0.1:8977").replace(/\/$/, "");
-const OUT = path.resolve(process.argv[3] || path.join(__dirname, "..", "docs", "images"));
+const ROOT = path.resolve(__dirname, "..");
+const ARGS = process.argv.slice(2);
+const has = (name) => ARGS.includes(`--${name}`);
+const argValue = (name, fallback) => {
+  const idx = ARGS.indexOf(`--${name}`);
+  return idx >= 0 && ARGS[idx + 1] ? ARGS[idx + 1] : fallback;
+};
 
-const THEME = process.env.SHOT_THEME || "dark";
-const WIDTH = Number(process.env.SHOT_WIDTH || 1320);
-const HEIGHT = Number(process.env.SHOT_HEIGHT || 900);
+const EXPLICIT_BASE = argValue("base", process.env.ETUDE_BASE || "");
+const SERVE = !has("no-serve") && !EXPLICIT_BASE;
+const SERVE_PORT = Number(argValue("port", "8978"));
+let BASE = (EXPLICIT_BASE || `http://127.0.0.1:${SERVE_PORT}`).replace(/\/$/, "");
+const OUT = path.resolve(ROOT, argValue("out", "docs/images"));
+const THEME = argValue("theme", process.env.SHOT_THEME || "warm");
+const STUB_PORT = Number(argValue("stub-port", "18999"));
+const WIDTH = Number(argValue("width", "1320"));
+const HEIGHT = Number(argValue("height", "900"));
+const ONLY = argValue("only", "|").split("|").filter(Boolean);
+const PYTHON = process.env.ETUDE_PYTHON || path.join(ROOT, ".venv", "Scripts", "python.exe");
+const CHROME =
+  process.env.CHROME_PATH || "C:/Program Files/Google/Chrome/Application/chrome.exe";
 
-const FIRST_LESSON = `
-  [...document.querySelectorAll('.lesson button')]
-    .find(b => b.textContent.trim() === '打开').click()
-`;
+const shots = [];
+let browser = null;
 
-const FIRST_PLAN = `
-  [...document.querySelectorAll('.plan button')]
-    .find(b => b.textContent.trim() === '打开').click()
-`;
+function want(code) {
+  return !ONLY.length || ONLY.some((one) => code.startsWith(one));
+}
+
+/* ------------------------------------------------------------ 造数据 */
+
+async function httpCall(pathname, options) {
+  const res = await fetch(BASE + pathname, options);
+  const text = await res.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch (err) {
+    body = text;
+  }
+  return { status: res.status, body };
+}
+
+async function postJson(pathname, payload) {
+  return httpCall(pathname, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** 造一个「有例句、有语音、没配图」的训练包，够截图用了。 */
+async function seed() {
+  console.log("\n=== 造数据（假模型，不出网络）===");
+  if (!fs.existsSync(PYTHON)) {
+    console.error(`找不到 python：${PYTHON}`);
+    return null;
+  }
+  const stub = spawn(PYTHON, [path.join(ROOT, "scripts", "openai_stub.py"), "--port", String(STUB_PORT)], {
+    cwd: ROOT,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  let lessonId = 0;
+  try {
+    let up = false;
+    for (let i = 0; i < 80 && !up; i += 1) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${STUB_PORT}/v1/models`);
+        up = res.ok || res.status === 404;
+      } catch (err) {
+        /* 还没起来 */
+      }
+      if (!up) await sleep(250);
+    }
+    if (!up) {
+      console.error("假模型没起来。");
+      return null;
+    }
+
+    await postJson("/api/config", {
+      llm: {
+        preset: "custom",
+        base_url: `http://127.0.0.1:${STUB_PORT}/v1`,
+        model: "stub-model",
+        api_key: "stub-key",
+      },
+      images: { source: "off" },
+      tts: { engine: "edge" },
+      pronounce: { enabled: true, mode: "acoustic", save_recordings: true },
+    });
+
+    const target = argValue("target", "appreciate");
+    const made = await postJson("/api/lessons", { target });
+    lessonId = (made.body && made.body.lesson_id) || 0;
+    if (!lessonId) {
+      console.error(`没建成训练包：${JSON.stringify(made.body)}`);
+      return null;
+    }
+    let status = "generating";
+    const deadline = Date.now() + 180000;
+    while (Date.now() < deadline) {
+      const job = await httpCall(`/api/lessons/${lessonId}/job`);
+      status = (job.body && job.body.status) || status;
+      if (status === "ready" || status === "failed") break;
+      await sleep(400);
+    }
+    console.log(`训练包 ${lessonId}：${status}`);
+
+    // 目标页要有一份大纲才画得出详情，这里也造一份（失败就只截列表和表单）。
+    const plan = await postJson("/api/plans", {
+      language: "en",
+      goal_kind: "fluency",
+      goal_label: "能开口",
+      goal_detail: "下个月去冰岛自驾，得能问路和订房",
+      domains: ["旅行", "日常"],
+      target_count: 6,
+    });
+    const planId = (plan.body && plan.body.plan && plan.body.plan.id) || 0;
+    console.log(`计划：${planId || "（没建成，跳过计划详情）"}`);
+    return { lessonId, planId };
+  } finally {
+    try {
+      stub.kill();
+    } catch (err) {
+      /* 忽略 */
+    }
+  }
+}
+
+/* ------------------------------------------------------------ 浏览器动作 */
+
+async function evalIn(expression) {
+  return await browser.evaluate(expression);
+}
+
+async function goto(hash, settle = 900) {
+  await browser.goto(`${BASE}/${hash}`, settle);
+}
+
+async function setPrefs(prefs) {
+  const payload = JSON.stringify(prefs);
+  await evalIn(`localStorage.setItem("etude-prefs", ${JSON.stringify(payload)}); true`);
+}
+
+async function resetPrefs() {
+  await setPrefs({ theme: THEME, size: "m", side: "open" });
+}
+
+async function waitFor(expression, label, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ok = await evalIn(`(() => { try { return Boolean(${expression}); } catch (e) { return false; } })()`);
+    if (ok) return true;
+    await sleep(120);
+  }
+  throw new Error(`等不到：${label}`);
+}
+
+/** 用真实鼠标事件点一个元素 —— 和 ui_smoke 里那套一样，先命中测试再点。 */
+async function click(selector, index = 0) {
+  const box = await evalIn(`(() => {
+    const nodes = document.querySelectorAll(${JSON.stringify(selector)});
+    const node = nodes[${index}];
+    if (!node) return null;
+    node.scrollIntoView({ block: "center" });
+    const r = node.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height };
+  })()`);
+  if (!box) throw new Error(`找不到 ${selector}[${index}]`);
+  for (const type of ["mousePressed", "mouseReleased"]) {
+    await browser.send("Input.dispatchMouseEvent", {
+      type,
+      x: Math.round(box.x),
+      y: Math.round(box.y),
+      button: "left",
+      clickCount: 1,
+    });
+  }
+  await sleep(220);
+}
+
+async function key(keyName, code, keyCode) {
+  await browser.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: keyName,
+    code,
+    windowsVirtualKeyCode: keyCode,
+    nativeVirtualKeyCode: keyCode,
+  });
+  await browser.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: keyName,
+    code,
+    windowsVirtualKeyCode: keyCode,
+    nativeVirtualKeyCode: keyCode,
+  });
+  await sleep(200);
+}
+
+async function shot(code, name, scrollTop = 0) {
+  if (!want(code)) return;
+  if (scrollTop) {
+    await evalIn(`(() => { const main = document.querySelector(".content") || window; main.scrollTo ? main.scrollTo(0, ${scrollTop}) : (main.scrollTop = ${scrollTop}); if (!main.scrollTo) window.scrollTo(0, ${scrollTop}); return true; })()`);
+    await sleep(260);
+  }
+  const file = path.join(OUT, `${code}-${name}.png`);
+  await browser.screenshot(file);
+  shots.push({ file, code, name });
+  console.log(`  ${path.basename(file)}`);
+}
+
+/** 排到未翻面状态：队列里第一张就是 read 卡。 */
+async function openStudyClean() {
+  await resetPrefs();
+  await goto("#/study", 1200);
+  await waitFor(`document.querySelector(".stage")`, "训练台画出来");
+}
+
+/** 用卡片浏览器进某个通道的第一张卡（比在训练页里连点五次稳）。 */
+async function practiceChannel(channelLabel) {
+  await goto("#/cards", 1100);
+  await waitFor(`document.querySelector(".browser table tbody tr")`, "卡片表格");
+  await evalIn(`(() => {
+    const select = document.querySelectorAll(".filters select")[1];
+    const option = [...select.options].find((one) => one.textContent === ${JSON.stringify(channelLabel)});
+    select.value = option.value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  })()`);
+  await sleep(900);
+  await waitFor(`document.querySelector(".browser table tbody tr .rowacts .btn")`, "筛选后的第一行");
+  await click(".browser table tbody tr .rowacts .btn", 0);
+  await waitFor(`document.querySelector(".stage")`, "进了训练台");
+  await sleep(500);
+}
+
+/* ------------------------------------------------------------ 一组图 */
+
+async function gallery(data) {
+  const { lessonId = 0, planId = 0 } = data || {};
+
+  // 01 训练页：阅读通道，未翻面
+  if (want("01")) {
+    await openStudyClean();
+    await shot("01", "study-read");
+  }
+
+  // 02 翻面：答案 + 评分条
+  if (want("02")) {
+    await openStudyClean();
+    await key(" ", "Space", 32);
+    await waitFor(`document.querySelector(".answer")`, "翻面");
+    await sleep(400);
+    await shot("02", "study-answer");
+  }
+
+  // 03 口语卡：跟读面板
+  if (want("03")) {
+    await practiceChannel("口语");
+    await waitFor(`document.querySelector(".pronounce")`, "跟读面板");
+    await shot("03", "study-speak");
+  }
+
+  // 04 跟读结果：假麦克风真录一段，走完整条打分链路
+  if (want("04")) {
+    try {
+      await practiceChannel("口语");
+      await waitFor(`document.querySelector(".btn.mic")`, "录音键");
+      await click(".btn.mic", 0);
+      await sleep(2100);
+      await click(".btn.mic", 0);
+      await waitFor(`document.querySelector(".result .score")`, "评分结果", 20000);
+      await sleep(500);
+      await shot("04", "study-pronounce");
+    } catch (err) {
+      console.log(`  （跟读那张没出：${err.message}）`);
+    }
+  }
+
+  // 05 打字通道：打完之后的逐词对比
+  if (want("05")) {
+    try {
+      await practiceChannel("打字");
+      await waitFor(`document.querySelector(".typerow input")`, "打字输入框");
+      const sentence = await evalIn(
+        `(window.__etude.state.current && window.__etude.state.current.example && window.__etude.state.current.example.sentence) || ""`,
+      );
+      if (sentence) {
+        const node = await evalIn(`(() => {
+          const input = document.querySelector(".typerow input");
+          return input ? true : false;
+        })()`);
+        if (node) {
+          await click(".typerow input", 0);
+          // 故意少打一个词，对比才有内容可看。
+          const typed = sentence.split(" ").filter((word, i) => i !== 2).join(" ");
+          for (const type of ["insertText"]) {
+            await browser.send("Input." + type, { text: typed });
+          }
+          await sleep(200);
+          // 用「比对」按钮而不是回车：真实鼠标点得到才是真能点。
+          await click(".typerow .btn", 0);
+          await waitFor(`document.querySelector(".diff-host .w")`, "逐词对比", 8000);
+          await sleep(400);
+          await shot("05", "study-type");
+        }
+      }
+    } catch (err) {
+      console.log(`  （打字那张没出：${err.message}）`);
+    }
+  }
+
+  // 06 训练包列表
+  if (want("06")) {
+    await goto("#/lessons", 1200);
+    await waitFor(`document.querySelector(".lesson-row")`, "训练包列表");
+    await shot("06", "lessons");
+  }
+
+  // 07 批量建包面板展开
+  if (want("07")) {
+    await goto("#/lessons", 1200);
+    await waitFor(`document.querySelector("details.batch summary")`, "批量面板");
+    await evalIn(`(() => { const d = document.querySelector("details.batch"); d.open = true; return true; })()`);
+    await sleep(400);
+    await shot("07", "lessons-batch");
+  }
+
+  // 08 训练包详情
+  if (want("08") && lessonId) {
+    await goto(`#/lessons/${lessonId}`, 1400);
+    await waitFor(`document.querySelector(".example-row")`, "例句列表");
+    await shot("08", "lesson-detail");
+  }
+
+  // 09 目标页
+  if (want("09")) {
+    await goto("#/plans", 1200);
+    await waitFor(`document.querySelector(".card .chips")`, "目标表单");
+    await shot("09", "plans");
+  }
+
+  // 10 计划详情：大纲
+  if (want("10") && planId) {
+    await goto(`#/plans/${planId}`, 1400);
+    await waitFor(`document.querySelector(".outline-row")`, "大纲");
+    await shot("10", "plan-detail");
+  }
+
+  // 11 卡片浏览器
+  if (want("11")) {
+    await goto("#/cards", 1400);
+    await waitFor(`document.querySelector(".browser table tbody tr")`, "卡片表");
+    await shot("11", "cards");
+  }
+
+  // 12 设置
+  if (want("12")) {
+    await goto("#/settings", 1400);
+    await waitFor(`document.querySelectorAll(".card").length >= 8`, "八张设置卡");
+    await shot("12", "settings");
+  }
+
+  // 13 设置里的发音训练：转写服务那一段展开
+  if (want("13")) {
+    await goto("#/settings", 1400);
+    await waitFor(`document.querySelectorAll(".card").length >= 8`, "八张设置卡");
+    const opened = await evalIn(`(() => {
+      const heads = [...document.querySelectorAll(".card-head h3")];
+      const target = heads.find((h) => h.textContent.includes("发音")) || null;
+      if (!target) return false;
+      const card = target.closest(".card");
+      const details = card.querySelector("details");
+      if (details) details.open = true;
+      card.scrollIntoView({ block: "start" });
+      return true;
+    })()`);
+    if (opened) {
+      await sleep(400);
+      await shot("13", "settings-pronounce");
+    }
+  }
+
+  // 14/15 深色与冷白
+  for (const [code, theme, name] of [
+    ["14", "dark", "theme-dark"],
+    ["15", "light", "theme-light"],
+  ]) {
+    if (!want(code)) continue;
+    await setPrefs({ theme, size: "m", side: "open" });
+    await goto("#/study", 1300);
+    await waitFor(`document.querySelector(".stage")`, "训练台");
+    await shot(code, name);
+  }
+
+  // 16 自检结果
+  if (want("16")) {
+    await goto("#/settings", 1300);
+    try {
+      await waitFor(`document.querySelectorAll(".card").length >= 8`, "八张设置卡");
+      const ok = await evalIn(`(() => {
+        const heads = [...document.querySelectorAll(".card-head h3")];
+        const target = heads.find((h) => h.textContent.includes("自检")) || null;
+        if (!target) return false;
+        const card = target.closest(".card");
+        const button = card.querySelector(".btn");
+        if (!button) return false;
+        card.scrollIntoView({ block: "start" });
+        button.click();
+        return true;
+      })()`);
+      if (ok) {
+        await sleep(2200);
+        await shot("16", "selfcheck");
+      }
+    } catch (err) {
+      console.log(`  （自检那张没出：${err.message}）`);
+    }
+  }
+
+  await resetPrefs();
+}
+
+/* ------------------------------------------------------------ 假麦克风 */
+
+/** 造一段「像说话」的音频给 --use-file-for-fake-audio-capture 用。
+ *  直接拿 tests/wavfmt 里的函数，省得在这里再写一遍 WAV 头。 */
+function fakeMicFile() {
+  const out = path.join(os.tmpdir(), "etude-fake-mic.wav");
+  const script = [
+    "import sys",
+    "sys.path.insert(0, r'" + path.join(ROOT, "backend") + "')",
+    "from tests.wavfmt import speech_then_pause",
+    "data = speech_then_pause(first=1.0, pause=0.22, second=1.1)",
+    "open(r'" + out + "', 'wb').write(data)",
+  ].join("\n");
+  try {
+    const res = spawn(PYTHON, ["-c", script], { stdio: "inherit", windowsHide: true });
+    return new Promise((resolve) => {
+      res.on("exit", (code) => resolve(code === 0 ? out : ""));
+    });
+  } catch (err) {
+    return Promise.resolve("");
+  }
+}
+
+/* ------------------------------------------------------------ 主流程 */
+
+/**
+ * 自己起一个服务，用**全新的**数据目录。
+ *
+ * 为什么非要新的：截图是给文档用的，里面出现五个一模一样的「appreciate」
+ * 训练包（那是前几次冒烟留下的）就变成了「这个产品有 bug 吧」。
+ * 一次性数据目录让每一批截图都从同一个干净状态开始 —— 也因此可复现。
+ */
+async function startOwnServer() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "etude-shots-data-"));
+  const proc = spawn(
+    PYTHON,
+    [
+      path.join(ROOT, "backend", "run_etude.py"),
+      "--no-window",
+      "--port",
+      String(SERVE_PORT),
+    ],
+    {
+      cwd: path.join(ROOT, "backend"),
+      env: { ...process.env, ETUDE_DATA_DIR: dataDir },
+      stdio: "ignore",
+      windowsHide: true,
+    },
+  );
+  for (let i = 0; i < 120; i += 1) {
+    if (await canReach(BASE)) {
+      console.log(`自己起了服务：${BASE}（数据目录 ${dataDir}）`);
+      return { proc, dataDir };
+    }
+    await sleep(250);
+  }
+  proc.kill();
+  console.error(`自己起的服务没起来：${BASE}`);
+  return null;
+}
 
 async function main() {
-  if (!(await canReach(BASE))) {
-    console.error(`连不上 ${BASE}，先把服务起起来。`);
+  if (!fs.existsSync(CHROME)) {
+    console.error(`找不到 Chrome：${CHROME}\n用 CHROME_PATH 指定路径。`);
     return 2;
   }
+  const own = SERVE ? await startOwnServer() : null;
+  if (!own && SERVE) return 2;
+  if (!(await canReach(BASE))) {
+    console.error(`连不上 ${BASE}。先起服务：\n  cd backend\n  ..\\.venv\\Scripts\\python.exe run_etude.py --no-window --port 8977`);
+    return 2;
+  }
+  fs.mkdirSync(OUT, { recursive: true });
 
-  const browser = await new Browser({ width: WIDTH, height: HEIGHT }).launch();
-  const made = [];
+  const data = has("no-seed") ? { lessonId: Number(argValue("lesson", "0")), planId: Number(argValue("plan", "0")) } : await seed();
 
+  const mic = await fakeMicFile();
+  if (!mic) console.log("  （没有假麦克风，跟读那张会跳过）");
+
+  browser = new Browser({
+    width: WIDTH,
+    height: HEIGHT,
+    extraArgs: [
+      "--use-fake-device-for-media-stream",
+      "--use-fake-ui-for-media-stream",
+      ...(mic ? [`--use-file-for-fake-audio-capture=${mic}`] : []),
+    ],
+  });
+  await browser.launch();
+  await browser.send("Emulation.setDeviceMetricsOverride", {
+    width: WIDTH,
+    height: HEIGHT,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+
+  // 先把外观偏好写进去，第一张图就用对的配色。
+  await browser.goto(`${BASE}/#/study`, 1200);
+  await resetPrefs();
+  await browser.reload(1200);
+
+  console.log("\n=== 出图 ===");
   try {
-    await browser.setViewport(WIDTH, HEIGHT);
-    await browser.goto(`${BASE}/#study`);
-    await browser.setTheme(THEME);
-
-    // ---- 01 训练页（队列里当前这张卡）----
-    // 队列第一张卡是哪个通道不由脚本决定，所以这里就叫「训练页」，
-    // 不假装它是阅读卡 —— 文件名说谎比没有文件名更糟。
-    await browser.goto(`${BASE}/#study`);
-    if (await browser.evaluate("!!document.querySelector('.stage .chan')")) {
-      made.push(await browser.screenshot(path.join(OUT, "01-study.png")));
-    }
-
-    // ---- 02 训练包列表 ----
-    await openLessonList(browser);
-    made.push(await browser.screenshot(path.join(OUT, "02-lessons.png")));
-
-    // ---- 03 训练包详情 ----
-    await openFirstLesson(browser);
-    made.push(await browser.screenshot(path.join(OUT, "03-lesson-detail.png")));
-
-    // ---- 04 / 05 听力卡（正面只有声音，翻面才给原文）----
-    await practice(browser, "听力");
-    await browser.waitFor("!!document.querySelector('.playbtn')", "听力卡的播放按钮");
-    made.push(await browser.screenshot(path.join(OUT, "04-listen-front.png")));
-    await revealAndSettle(browser);
-    made.push(await browser.screenshot(path.join(OUT, "05-listen-revealed.png")));
-
-    // ---- 06 打字卡（提交后，带逐词差异）----
-    await practice(browser, "打字");
-    await browser.waitFor("!!document.querySelector('.typerow input')", "打字输入框");
-    await browser.evaluate(`
-      (() => {
-        const input = document.querySelector('.typerow input');
-        input.value = 'i really appreciate the way this one work';
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      })()
-    `);
-    await sleep(500);
-    made.push(await browser.screenshot(path.join(OUT, "06-type-card.png")));
-
-    // ---- 07 口语卡（翻面后）----
-    await practice(browser, "口语");
-    await revealAndSettle(browser);
-    made.push(await browser.screenshot(path.join(OUT, "07-speak-revealed.png")));
-
-    // ---- 08 造句卡（翻面后）----
-    await practice(browser, "造句");
-    await revealAndSettle(browser);
-    made.push(await browser.screenshot(path.join(OUT, "08-build-revealed.png")));
-
-    // ---- 09 口语卡正面：场景 = 一张图 ----
-    // 场景配图**只出现在「场景」这一侧**，所以口语卡正面是唯一能
-    // 一眼说明「场景拿到了图、而语言输入那一侧干净」的位置。
-    await practice(browser, "口语");
-    await browser.waitFor(
-      "!!document.querySelector('.imgwrap img.sceneimg')", "场景配图");
-    made.push(await browser.screenshot(path.join(OUT, "09-speak-scene.png")));
-
-    // ---- 10 目标列表 ----
-    // 先清 openPlan 再切：setView 只在「离开 plans 视图」时才清它，
-    // 而这里是从设置页过来的，不显式清就可能直接落到某个计划的详情上。
-    await browser.goto(`${BASE}/#plans`);
-    await browser.evaluate("state.openPlan = null; setView('plans')");
-    await browser.waitFor("document.querySelectorAll('.plan').length > 0", "目标列表");
-    made.push(await browser.screenshot(path.join(OUT, "10-plans.png")));
-
-    // ---- 11 目标大纲（待确认，还没开始生成）----
-    await browser.evaluate(FIRST_PLAN);
-    await browser.waitFor("document.querySelectorAll('.outline-item').length > 0", "大纲条目");
-    await scrollTo(browser, ".outline-item");
-    made.push(await browser.screenshot(path.join(OUT, "11-plan-outline.png")));
-
-    // ---- 12 / 13 / 14 设置页的三张卡 ----
-    await browser.goto(`${BASE}/#settings`);
-    await browser.evaluate("setView('settings')");
-    await browser.waitFor("document.querySelectorAll('table.self tr').length > 0", "自检表");
-    made.push(await browser.screenshot(path.join(OUT, "12-settings-llm.png")));
-
-    await scrollToCard(browser, "场景配图");
-    made.push(await browser.screenshot(path.join(OUT, "13-settings-images.png")));
-
-    await scrollToCard(browser, "数据");
-    made.push(await browser.screenshot(path.join(OUT, "14-settings-data.png")));
-
-    // ---- 15 卡片浏览页（0.0.3 的「老手调控」）----
-    // 这张图负责说明「Anki 式灵活度」到底长什么样：能筛、能翻页、
-    // 能勾选一批一起处理。没有这张图的话，「支持批量调整」只能靠嘴说。
-    await browser.goto(`${BASE}/#cards`);
-    await browser.evaluate("setView('cards')");
-    await browser.waitFor(
-      "document.querySelectorAll('table.browser tbody tr').length > 0", "卡片列表");
-    made.push(await browser.screenshot(path.join(OUT, "15-cards-browser.png")));
-
-    // ---- 16 / 17 卡片编辑器：简易 与 进阶 ----
-    // **两档都要拍。** 只拍进阶的话，README 看起来像个只给 SRS 老手的工具；
-    // 只拍简易的话，「老手能手动调间隔」这件事又没了证据。
-    // 同一件事的两面，一张图各说一半都会骗人。
-    await openLessonList(browser);
-    await openFirstLesson(browser);
-    await browser.evaluate(`
-      (() => {
-        const first = document.querySelectorAll('.example')[0];
-        const btn = [...first.querySelectorAll('.chanbtns button')]
-          .find(b => b.textContent.trim() === '编辑');
-        if (!btn) throw new Error('找不到「编辑」按钮');
-        btn.click();
-        return true;
-      })()
-    `);
-    await browser.waitFor("!!document.querySelector('.drawer')", "卡片编辑器");
-
-    await browser.evaluate("setLook({ density: 'simple' })");
-    await sleep(500);
-    made.push(await browser.screenshot(path.join(OUT, "16-card-editor-simple.png")));
-
-    await browser.evaluate("setLook({ density: 'advanced' })");
-    // 改密度会顺手重画背后的详情页（要重新取一次这个包），等它回来。
-    await browser.waitFor(
-      "document.querySelectorAll('.example').length > 0", "重画之后的例句列表");
-    made.push(await browser.screenshot(path.join(OUT, "17-card-editor-advanced.png")));
-
-    await browser.evaluate("closeEditor()");
-    await sleep(400);
-
-    // ---- 18 / 19 / 20 三套配色 ----
-    // 三套都要有。只放深色的话，用户会以为这是个深色工具 ——
-    // 而默认的那套其实是「暖白 · 护眼」，用户反馈的那条也正是冲它来的。
-    //
-    // 编号写死成一张表，不用 ``"1" + (8 + i)`` 这类算术 ——
-    // 那个算法在 i=2 时会产出 `110`，文件名就成了
-    // `110-theme-dark.png`，排在 11 后面，肉眼几乎看不出错。
-    const THEME_SHOTS = [
-      ["18-theme-warm", "warm"],
-      ["19-theme-light", "light"],
-      ["20-theme-dark", "dark"],
-    ];
-    await browser.evaluate("setLook({ density: 'simple' })");
-    for (const [name, theme] of THEME_SHOTS) {
-      await browser.setTheme(theme);
-      // 刷新之后 hash 还是 #lessons，而 openLesson 已经没了（那是内存里的状态）——
-      // 显式回训练页，保证三张图拍的是同一处界面。
-      await browser.evaluate("state.openLesson = null; setView('study')");
-      // 队列要重新拉一次。只 sleep 的话，慢机器上会拍到一个空壳 ——
-      // 而这种图看起来最可信，也最容易骗到人。
-      await browser.waitFor(
-        "!!document.querySelector('.stage .chan')", `${theme} 配色下的卡片`, 20000);
-      // 中文场景说法是**随机挑一条**的（`pickZh`）。不固定的话，
-      // 三张并排的配色图会显示三段不同的中文 —— 读起来像三张不同的卡，
-      // 而这几张图要说明的恰恰是「同一屏，三种皮肤」。
-      // 固定随机数之后重画一次，让三张图逐字可比。
-      // 注意：必须在 reload **之后**设，reload 会把页面里的覆盖清掉。
-      await browser.evaluate("Math.random = () => 0.42; render();");
-      await sleep(250);
-      made.push(await browser.screenshot(path.join(OUT, `${name}.png`)));
-    }
-    // 还原成文档主用的那套，免得后续再跑别的脚本时状态不对。
-    await browser.setTheme(THEME);
-    await sleep(400);
-
-    console.log(`生成了 ${made.length} 张截图（主题：${THEME}，${WIDTH}×${HEIGHT}）：`);
-    for (const file of made) console.log("  " + path.relative(process.cwd(), file));
-
-    if (browser.pageErrors.length || browser.consoleErrors.length) {
-      console.error("\n页面里有报错，截图未必可信：");
-      for (const e of browser.pageErrors) console.error("  异常: " + e);
-      for (const e of browser.consoleErrors) console.error("  console.error: " + e);
-      return 1;
-    }
-    return 0;
+    await gallery(data);
   } finally {
     await browser.close();
+    if (own && own.proc) {
+      // 关掉自己起的服务：不留后台进程，也不删数据目录
+      // （出错时那里面是唯一能看出发生了什么的东西）。
+      own.proc.kill();
+    }
   }
-}
 
-// 回到训练包列表。
-//
-// 这里必须**显式重画**，不能只靠改 hash。原因：
-// openLesson()（点「打开」进详情）会把 location.hash 也设成 #lessons。
-// 于是「再 goto 一次 #lessons」变成了同 hash 导航 ——
-// hashchange 不触发，页面上那个 if (next !== state.view) 的比对也不成立，
-// 结果是**页面留在训练包详情页**，而后面所有「从列表进」的步骤
-// 全都找不到 .lesson，报一句含糊的「等不到训练包列表」。
-// setView 不管 hash 变没变都会 render()，所以它才是这里该用的东西。
-async function openLessonList(browser) {
-  await browser.goto(`${BASE}/#lessons`);
-  await browser.evaluate("setView('lessons')");
-  await browser.waitFor("document.querySelectorAll('.lesson').length > 0", "训练包列表");
-}
-
-async function openFirstLesson(browser) {
-  await browser.evaluate(FIRST_LESSON);
-  await browser.waitFor("document.querySelectorAll('.example').length > 0", "例句列表");
-}
-
-// 从训练包详情里的「练XX」按钮进 —— 比在队列里翻几十张卡快得多，
-// 而且顺带验证了「自由练」这条路是通的。
-async function practice(browser, label) {
-  await openLessonList(browser);
-  await openFirstLesson(browser);
-  await browser.evaluate(`
-    (() => {
-      const first = document.querySelectorAll('.example')[0];
-      const btn = [...first.querySelectorAll('.chanbtns button')]
-        .find(b => b.textContent.includes(${JSON.stringify(label)}));
-      if (!btn) throw new Error('找不到「练' + ${JSON.stringify(label)} + '」按钮');
-      btn.click();
-      return true;
-    })()
-  `);
-  await sleep(900);
-}
-
-async function revealAndSettle(browser) {
-  await browser.evaluate("reveal()");
-  await sleep(400);
-}
-
-// 把某个元素滚到视口顶端再截 —— 默认截图只拍视口，
-// 页面下半部分的内容不滚过去就永远拍不到。
-async function scrollTo(browser, selector) {
-  const ok = await browser.evaluate(`
-    (() => {
-      const node = document.querySelector(${JSON.stringify(selector)});
-      if (!node) return false;
-      node.scrollIntoView({ block: 'start' });
-      return true;
-    })()
-  `);
-  if (!ok) throw new Error(`页面上找不到 ${selector}，滚不过去`);
-  await sleep(400);
-}
-
-async function scrollToCard(browser, title) {
-  const ok = await browser.evaluate(`
-    (() => {
-      const card = [...document.querySelectorAll('.card')].find(
-        (c) => ((c.querySelector('h2') || {}).textContent || '').trim() === ${JSON.stringify(title)}
-      );
-      if (!card) return false;
-      card.scrollIntoView({ block: 'start' });
-      return true;
-    })()
-  `);
-  if (!ok) throw new Error(`设置页里找不到标题为「${title}」的卡片`);
-  await sleep(400);
+  console.log(`\n共 ${shots.length} 张，输出到 ${OUT}`);
+  if (browser.pageErrors.length || browser.consoleErrors.length) {
+    console.error("页面有报错：");
+    for (const line of [...browser.pageErrors, ...browser.consoleErrors]) console.error(`  ${line}`);
+    return 1;
+  }
+  return 0;
 }
 
 main()
-  .then((code) => process.exit(code))
+  .then((code) => process.exit(code || 0))
   .catch((err) => {
-    console.error("生成截图时出错：" + err.message);
+    console.error(err);
     process.exit(1);
   });

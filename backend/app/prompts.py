@@ -431,3 +431,87 @@ def classify_target(target: str) -> str:
         return "sentence"
 
     return "phrase"
+
+
+# --------------------------------------------------------------- 按主题批量建包
+
+# 「按主题批量建包」和「学习计划」的区别，是设计上刻意留的：
+# 计划要的是**一份跨越几周的路线**（所以有 goal、有大纲、有先后顺序），
+# 主题批量要的是**一堆今天就能练的目标**（所以只要一个主题和数量）。
+# 把两者合成一个功能，用户就得先想清楚「我这算计划还是算批量」——
+# 而他真正想说的是「我想多练点和厨房有关的东西」。
+THEME_SYSTEM = """You propose TRAINING TARGETS for one themed batch in a
+sentence-based language trainer. The learner will get 8 example sentences per
+target, each practiced in five channels (read, listen, speak, type, build).
+
+HARD RULES
+1. Output ONE JSON object. No prose, no code fences.
+2. Every target must be a thing a person can actually say: a word, a fixed
+   expression, or a whole sentence. NEVER a grammar rule, a topic name, or a
+   label such as "一般现在时" / "kitchen vocabulary". "kitchen vocabulary" is not
+   a target; "put the kettle on" is.
+3. Mix the shapes: roughly 40% words, 35% fixed expressions / phrasal verbs,
+   25% whole sentences. A batch made only of single words is the thing this app
+   exists to avoid.
+4. Everything must genuinely fit the theme. If the theme is "厨房", the targets
+   are what people say while cooking — not restaurant vocabulary.
+5. No duplicates, no near-duplicates. "make coffee" and "make a cup of coffee"
+   are the same target.
+6. Prefer high-frequency, immediately usable language over rare or literary
+   words.
+7. `why` is one short sentence in Chinese saying when the learner would say it."""
+
+
+def _theme_schema(count: int) -> str:
+    return (
+        "Return JSON with this shape:\n"
+        "{\n"
+        '  "note": "<one short Chinese sentence about the angle you chose>",\n'
+        '  "targets": [\n'
+        '    {"target": "<word / expression / sentence>",\n'
+        '     "kind": "word" | "phrase" | "sentence",\n'
+        '     "domain": "<topic word in Chinese>",\n'
+        '     "why": "<one short Chinese sentence>"}\n'
+        "  ]\n"
+        "}\n"
+        f"Give exactly {count} targets."
+    )
+
+
+def build_theme_messages(
+    theme: str,
+    count: int = 12,
+    *,
+    language: str = "en",
+    exclude: list[str] | None = None,
+) -> list[dict]:
+    """拼出「按主题出一批训练目标」的提示词。
+
+    ``exclude`` 是已经存在过的目标 —— 传进去可以避免「同一批里又给我
+    三条我已经建过的」。这不是锦上添花：批量建包的第二次点击几乎必然
+    会撞上第一次建过的词。
+    """
+    profile = language_profile(language)
+    if not profile["supported"]:
+        raise NotImplementedError(
+            f"{profile['label']}（{profile['native']}）还没开放。{profile['note']}"
+        )
+
+    theme = (theme or "").strip() or "everyday life"
+    known = [str(item).strip() for item in (exclude or []) if str(item).strip()]
+    user = (
+        f"TARGET LANGUAGE: {profile['native']} ({profile['label']})\n\n"
+        f"THEME: {theme}\n\n"
+        f"{_theme_schema(max(1, min(60, int(count))))}\n"
+    )
+    if known:
+        user += (
+            "\nAlready used — do NOT repeat these or close variants:\n"
+            + ", ".join(known[:120])
+            + "\n"
+        )
+    user += "\nStrict JSON only."
+    return [
+        {"role": "system", "content": THEME_SYSTEM},
+        {"role": "user", "content": user},
+    ]

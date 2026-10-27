@@ -103,6 +103,29 @@ def stub_llm(monkeypatch):
         }
         return json.dumps(payload, ensure_ascii=False)
 
+    def fake_theme(user: str) -> str:
+        """按主题出的一批目标。
+
+        刻意混进一条**纯字符串**（不是对象）—— 有的模型就是不肯按 schema
+        给对象，``normalize_targets`` 必须能吃下这种形状，用例也就顺手盯着它。
+        """
+        m = re.search(r"Give exactly (\d+) targets", user)
+        count = int(m.group(1)) if m else 6
+        seeds = [
+            {"target": "kettle", "kind": "word", "domain": "厨房", "why": "烧水时说"},
+            {"target": "put the kettle on", "kind": "phrase", "domain": "厨房", "why": "让别人去烧水"},
+            {"target": "Is the stove still on?", "kind": "sentence", "domain": "厨房", "why": "出门前确认"},
+            {"target": "a chopping board", "kind": "phrase", "domain": "厨房", "why": "找东西时"},
+        ]
+        targets: list[object] = []
+        for i in range(count):
+            if i % 5 == 4:
+                targets.append(f"leftover target {i}")
+            else:
+                targets.append(dict(seeds[i % len(seeds)]))
+        payload = {"note": "厨房里真正会说的话。", "targets": targets}
+        return json.dumps(payload, ensure_ascii=False)
+
     def fake_chat(**kwargs):
         messages = kwargs.get("messages") or []
         system = next(
@@ -115,6 +138,8 @@ def stub_llm(monkeypatch):
                 break
         if "You design the SYLLABUS" in system:
             return fake_syllabus(user)
+        if "propose TRAINING TARGETS" in system:
+            return fake_theme(user)
 
         payload = {
             "kind": "word",

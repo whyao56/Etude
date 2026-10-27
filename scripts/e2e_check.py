@@ -135,8 +135,16 @@ def main() -> int:
             with open_no_proxy(base + "/") as resp:
                 html = resp.read().decode("utf-8")
                 headers = {k.lower(): v for k, v in resp.headers.items()}
-            check(len(html) > 20000, "界面文件在包里并且取得到", f"{len(html)} 字节")
-            check("Etude" in html and "APP_VERSION" in html, "界面内容看起来是对的")
+            check(len(html) > 800, "界面文件在包里并且取得到", f"{len(html)} 字节")
+            check("Etude" in html and "main.js" in html, "界面壳子看起来是对的")
+            # 0.1.0 的版本常量搬到了 js/version.js —— 顺手确认它真的被打进了包，
+            # 而且要能顺着 /static/ 取到（打包漏了前端模块时这条会红）。
+            with open_no_proxy(base + "/static/js/version.js") as resp:
+                version_js = resp.read().decode("utf-8")
+            check("APP_VERSION" in version_js, "前端版本常量取得到")
+            with open_no_proxy(base + "/static/css/tokens.css") as resp:
+                tokens = resp.read().decode("utf-8")
+            check(len(tokens) > 500, "样式表也进包了", f"{len(tokens)} 字节")
             check("no-store" in headers.get("cache-control", ""),
                   "界面响应带了 no-store（否则版本检测会失效）")
 

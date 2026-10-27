@@ -6,6 +6,11 @@
    下面每个用例都连着「它要拦的那种坏法」一起写。
 2. **反证本身也要被怀疑**：替换要忠实还原旧写法，
    不是「改成一种看起来更差的写法」。
+
+0.1.0 的改动：前端从「一个 index.html」变成 17 个 ES 模块，
+原来的 `check_js.py`（从 `<script>` 里抠代码）整份换成了
+`check_frontend.py`（查导入、图标、类名、版本）。这里跟着换，
+但「先让守卫在坏的输入上失败」这条纪律不变。
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-FRONTEND = ROOT / "backend" / "frontend" / "index.html"
+VERSION_JS = ROOT / "backend" / "frontend" / "js" / "version.js"
 
 
 # ------------------------------------------------------- 版本号一致（§7.5）
@@ -31,151 +36,126 @@ def test_frontend_version_matches_backend():
     """
     from app import __version__
 
-    html = FRONTEND.read_text(encoding="utf-8")
-    match = re.search(r'const\s+APP_VERSION\s*=\s*"([^"]+)"', html)
-    assert match, "index.html 里找不到 APP_VERSION 常量"
+    text = VERSION_JS.read_text(encoding="utf-8")
+    match = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', text)
+    assert match, "js/version.js 里找不到 APP_VERSION 常量"
     assert match.group(1) == __version__, (
         f"前端 APP_VERSION={match.group(1)}，后端 __version__={__version__}。"
         " 两处必须一起改。"
     )
 
 
-def test_version_guard_would_catch_a_drift(monkeypatch):
-    """反证：把后端版本号改掉，上面那条必须失败。
-
-    这条是给「守卫本身」做的守卫 —— 如果哪天有人把上面那条改成
-    只检查「有没有 APP_VERSION 这个字段」，这条会立刻红。
-    """
+def test_version_guard_would_catch_a_drift():
+    """反证：把版本号改成别的值，上面那条的判据必须失败。"""
     from app import __version__
 
-    html = FRONTEND.read_text(encoding="utf-8")
-    drifted = html.replace(
-        f'const APP_VERSION = "{__version__}"', 'const APP_VERSION = "9.9.9"'
-    )
-    assert drifted != html, "替换没生效，说明反证没有忠实地还原出「漂移」这个状态"
-    match = re.search(r'const\s+APP_VERSION\s*=\s*"([^"]+)"', drifted)
+    text = VERSION_JS.read_text(encoding="utf-8")
+    drifted = re.sub(r'APP_VERSION\s*=\s*"[^"]+"', 'APP_VERSION = "9.9.9"', text)
+    assert drifted != text, "替换没生效，说明反证没有忠实地还原出「漂移」这个状态"
+    match = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', drifted)
     assert match.group(1) != __version__
 
 
-# ------------------------------------------------- 前端调用点静态守卫（§3.3）
+# ------------------------------------------------- 前端静态守卫（模块版）
 
 
-def test_js_probe_self_test_passes():
-    """探针自检必须先过。
+def _guard():
+    import sys
 
-    探针坏了会伪装成被测对象坏了 —— 上个项目里
-    「探测脚本自己写错了」骗过一次：三个修复全报 False，
-    看起来像重建没生效，其实是探针用错了成员判断。
-    """
-    import check_js
+    scripts = str(ROOT / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import check_frontend
 
-    failures = check_js.self_test()
-    assert not failures, "静态守卫的探针自检没通过：" + "；".join(failures)
+    return check_frontend
 
 
-def test_js_call_sites_all_defined():
-    """真正的调用点检查：引用了但本文件没定义的名字必须为零。"""
-    import check_js
-
-    html = FRONTEND.read_text(encoding="utf-8")
-    blocks = check_js.extract_scripts(html)
-    assert blocks, "index.html 里没有 <script> 块"
-
-    suspicious = []
-    for _offset, code in blocks:
-        clean = check_js.strip_noise(code)
-        declared = check_js.declared_names(clean)
-        for name, line in check_js.called_names(clean).items():
-            if name in declared or name in check_js.KEYWORDS or name in check_js.BUILTINS:
-                continue
-            suspicious.append((name, line))
-    assert not suspicious, f"有调用了但没定义的名字：{suspicious}"
+def test_frontend_probe_self_test_passes():
+    """探针先自证：探针坏了会伪装成「被测对象坏了」。"""
+    guard = _guard()
+    assert guard.self_test() == []
 
 
-def test_js_guard_would_catch_a_renamed_function(tmp_path):
-    """反证：把某个函数的定义改名、调用点不动，守卫必须报出来。
-
-    忠实还原的是**上个项目真实发生过的坏法**：重构时把函数并进了另一个，
-    漏改调用点，而全量测试是绿的。
-    """
-    import check_js
-
-    html = FRONTEND.read_text(encoding="utf-8")
-    broken = html.replace("function reveal() {", "function revealTheCard() {", 1)
-    assert broken != html, "替换没生效，反证不忠实"
-
-    path = tmp_path / "broken.html"
-    path.write_text(broken, encoding="utf-8")
-
-    blocks = check_js.extract_scripts(broken)
-    suspicious = set()
-    for _offset, code in blocks:
-        clean = check_js.strip_noise(code)
-        declared = check_js.declared_names(clean)
-        for name in check_js.called_names(clean):
-            if name in declared or name in check_js.KEYWORDS or name in check_js.BUILTINS:
-                continue
-            suspicious.add(name)
-    assert "reveal" in suspicious, "守卫没有抓到漏改的调用点"
+def test_frontend_guard_passes_on_the_real_tree():
+    guard = _guard()
+    problems = (
+        guard.check_imports(guard.js_files())
+        + guard.check_icons(guard.js_files())
+        + guard.check_classes(guard.js_files())
+        + guard.check_version()
+    )
+    assert problems == [], "前端守卫有问题：" + "；".join(problems)
 
 
-def test_js_probe_is_not_fooled_by_regex_with_quote():
-    """探针不能被『正则字面量里的引号』骗到 —— 第一版就栽在这里。
-
-    ``/[^a-z0-9' ]/g`` 里那个单引号会被朴素的清洗器当成字符串开头，
-    把中间一大段代码整个吃掉，于是报出一堆「未定义」的假警报。
-    """
-    import check_js
-
-    sample = """function before() {}
-                  var re = /[^a-z0-9' ]/g;
-                  function after() {}"""
-    clean = check_js.strip_noise(sample)
-    assert "function after" in clean
-    assert "function before" in clean
-    assert "a-z0-9" not in clean
+def test_import_guard_catches_a_renamed_export(tmp_path):
+    """把导出的名字改掉、导入处没跟着改 —— 浏览器只会报一句 undefined。"""
+    guard = _guard()
+    (tmp_path / "a.js").write_text("export function foo() {}\n", encoding="utf-8")
+    (tmp_path / "b.js").write_text(
+        'import { bar } from "./a.js";\nbar();\n', encoding="utf-8"
+    )
+    problems = guard.check_imports([tmp_path / "b.js"])
+    assert any("bar" in line for line in problems), problems
 
 
-def test_event_names_are_lowercased():
-    """事件类型串必须全小写。
-
-    这是第一版真踩到的 bug：``el()`` 里写的是 ``key.slice(2)``，
-    于是 ``onClick`` 变成了 ``addEventListener("Click", ...)`` ——
-    大小写敏感，所以**一个都不会触发**。界面照常画出来，
-    只是点什么都没反应。截图看不出来，Python 测试也测不到。
-    """
-    import check_js
-
-    html = FRONTEND.read_text(encoding="utf-8")
-    blocks = check_js.extract_scripts(html)
-    for _offset, code in blocks:
-        offenders, lowers = check_js.bad_event_type_literals(code)
-        assert not offenders, f"有大小写错误的事件名：{offenders}"
-    # 有 el() 这种把 onXxx 转小写的实现在，才算真的修好了。
-    assert any(
-        check_js.bad_event_type_literals(code)[1] for _o, code in blocks
-    ), "找不到把事件名转小写的那一步"
+def test_icon_guard_catches_a_typo(tmp_path):
+    """图标名拼错不会报错，只画一个空方块。"""
+    guard = _guard()
+    (tmp_path / "x.js").write_text('icon("tarsh");\n', encoding="utf-8")
+    problems = guard.check_icons([tmp_path / "x.js"])
+    assert any("tarsh" in line for line in problems), problems
 
 
-def test_event_name_guard_would_catch_the_old_writing():
-    """反证：忠实还原第一版那种坏写法，守卫必须报出来。"""
-    import check_js
-
-    broken = 'node.addEventListener(key.slice(2), value);\n'
-    # 旧写法是「不转换」，所以这里没有 toLowerCase —— 守卫的第二个返回值
-    # 是 False。而且如果哪里写了字面量大写事件名，第一个返回值会报出来。
-    offenders, lowers = check_js.bad_event_type_literals(broken)
-    assert lowers is False, "旧写法里不该有 toLowerCase，反证不忠实"
-
-    offenders2, _ = check_js.bad_event_type_literals('x.addEventListener("Click", f);')
-    assert offenders2 and offenders2[0][0] == "Click"
+def test_icon_guard_accepts_a_real_icon(tmp_path):
+    guard = _guard()
+    (tmp_path / "x.js").write_text('icon("trash");\n', encoding="utf-8")
+    assert guard.check_icons([tmp_path / "x.js"]) == []
 
 
-# ------------------------------------------------- 错误提示的方向（§7.4）
+def test_class_guard_catches_a_style_that_does_not_exist(tmp_path):
+    """JS 里写了类名、CSS 里没有规则 —— 不报错，页面只是「看起来没做完」。"""
+    guard = _guard()
+    (tmp_path / "y.js").write_text('el("div", { class: "no-such-style" });\n', encoding="utf-8")
+    problems = guard.check_classes([tmp_path / "y.js"])
+    assert any("no-such-style" in line for line in problems), problems
 
 
-def test_missing_dependency_ranks_before_network_keywords():
-    """缺组件的判断必须排在所有网络关键词之前。
+def test_class_guard_accepts_a_class_that_exists(tmp_path):
+    guard = _guard()
+    (tmp_path / "y.js").write_text('el("div", { class: "card" });\n', encoding="utf-8")
+    assert guard.check_classes([tmp_path / "y.js"]) == []
+
+
+def test_class_guard_ignores_template_expressions(tmp_path):
+    """拼出来的类名（模板串）没法静态判断，不该误报。"""
+    guard = _guard()
+    (tmp_path / "y.js").write_text(
+        'el("button", { class: `grade g${level}` });\n', encoding="utf-8"
+    )
+    assert guard.check_classes([tmp_path / "y.js"]) == []
+
+
+def test_strip_noise_keeps_line_numbers():
+    """行号必须准：一个报告「views.css:1173」的守卫，行号偏三十行就没人信它。"""
+    guard = _guard()
+    sample = "/* 注释\n还是注释 */\n.a { color: red }\n"
+    cleaned = guard.strip_noise(sample)
+    assert len(cleaned) == len(sample)
+    assert cleaned.count("\n") == sample.count("\n")
+    assert "color" in cleaned
+
+
+def test_strip_noise_erases_strings():
+    guard = _guard()
+    cleaned = guard.strip_noise('const a = ".not-a-class { }";')
+    assert ".not-a-class" not in cleaned
+
+
+# ------------------------------------------------- 错误提示的方向（§6.3）
+
+
+def test_missing_dependency_is_reported_before_network_trouble():
+    """模块没打进包，提示必须是「重新安装」，不能是「换个网络」。
 
     为什么是硬要求：模块名有可能碰巧命中网络关键词。排在后面的话，
     用户会看到「重试 / 换镜像」—— 而镜像补不上一个没打进包的模块，
@@ -191,8 +171,6 @@ def test_missing_dependency_ranks_before_network_keywords():
     assert "重新安装" in err.hint
     assert "换镜像" not in err.hint
     # 而且必须**明确告诉用户重试没用**。
-    # （注意：这里断言的是「说明了重试无效」，不是「不许出现重试二字」——
-    #  后一种断言会把「重试也不会好」这句正确的话也误判成违规。）
     assert "重试也不会好" in err.hint
 
 
@@ -289,12 +267,17 @@ def test_no_real_email_in_repository():
     """
     pattern = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
     allowed = {"example.com", "example.org", "users.noreply.github.com"}
+    # 跳过集合里的每一个都是「不是我们的代码」：
+    #   .venv / venv        —— 装进来的第三方包，邮箱是包作者的（0.1.0 加：本机建了 venv）
+    #   .git / dist / build —— 版本库与产物
+    #   node_modules        —— 前端依赖
+    skip = {".git", "dist", "build", "node_modules", "__pycache__",
+            ".venv", "venv", ".mypy_cache", ".pytest_cache"}
     offenders = []
     for path in ROOT.rglob("*"):
         if not path.is_file():
             continue
-        if any(part in {".git", "dist", "build", "node_modules", "__pycache__"}
-               for part in path.parts):
+        if any(part in skip for part in path.parts):
             continue
         if path.suffix.lower() in {".png", ".jpg", ".ico", ".mp3", ".zip", ".exe", ".dll", ".pyc"}:
             continue

@@ -1,0 +1,365 @@
+/* 骨架：侧栏 + 顶栏 + 内容区。
+ *
+ * 0.1.0 的布局变化：内容区不再是「一张接一张的卡片墙」，
+ * 而是「一张纸 + 若干分区」，分区的边界靠留白和一条细线，不靠阴影。
+ */
+
+.shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+/* ------------------------------------------------------------------ 侧栏 */
+
+.side {
+  width: var(--side);
+  flex: 0 0 var(--side);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 14px 14px;
+  border-right: 1px solid var(--line);
+  background: var(--bg-grain);
+  transition: width 0.18s ease, flex-basis 0.18s ease;
+  overflow: hidden;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 8px 0;
+  min-height: 38px;
+}
+
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 9px;
+  background: linear-gradient(150deg, var(--accent), var(--accent-2));
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  font-family: var(--serif);
+  font-size: 1.1em;
+  font-weight: 700;
+  box-shadow: var(--shadow-1);
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.brand-text b {
+  font-size: 1.02em;
+  letter-spacing: 0.02em;
+}
+
+.brand-text span {
+  font-size: 0.72em;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  cursor: pointer;
+  color: var(--ink-2);
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.nav-item:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.nav-item[aria-current="page"] {
+  /* 当前页只要一小条提示就够了：整块白底 + 阴影会让人以为那是个按钮，
+     而导航本来一直就在那儿 —— 别让它抢走「开始训练」那种真正要点的东西。 */
+  background: var(--accent-soft);
+  color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.nav-item[aria-current="page"] .label {
+  font-weight: 600;
+}
+
+.nav-item[aria-current="page"] .ico {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.nav-item .ico {
+  flex: 0 0 18px;
+  color: currentColor;
+  opacity: 0.85;
+}
+
+.nav-item .label {
+  flex: 1;
+  white-space: nowrap;
+  font-size: 0.94em;
+}
+
+.nav-item .count {
+  font-size: 0.72em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  background: var(--surface-3);
+  border-radius: 99px;
+  padding: 1px 7px;
+  min-width: 22px;
+  text-align: center;
+}
+
+.nav-item .count.is-hot {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.side-spacer {
+  flex: 1;
+}
+
+.side-block {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.side-block .cap {
+  font-size: 0.7em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 0 4px;
+}
+
+.side-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  font-size: 0.76em;
+  color: var(--ink-3);
+}
+
+.side-foot .grow {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--ink-3);
+  flex: 0 0 7px;
+}
+
+.dot.ok {
+  background: var(--ok);
+}
+
+.dot.warn {
+  background: var(--warn);
+}
+
+.dot.bad {
+  background: var(--bad);
+}
+
+/* 侧栏收起：只留图标。按钮的 title 属性负责说话。 */
+html[data-side="collapsed"] .side {
+  width: var(--side-collapsed);
+  flex-basis: var(--side-collapsed);
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+html[data-side="collapsed"] .brand-text,
+html[data-side="collapsed"] .nav-item .label,
+html[data-side="collapsed"] .nav-item .count,
+html[data-side="collapsed"] .side-block .cap,
+html[data-side="collapsed"] .side-foot .grow,
+html[data-side="collapsed"] .side-block .btn .label {
+  display: none;
+}
+
+html[data-side="collapsed"] .nav-item {
+  justify-content: center;
+  padding: 10px 0;
+}
+
+html[data-side="collapsed"] .brand {
+  justify-content: center;
+}
+
+/* ------------------------------------------------------------------ 主区 */
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--topbar);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.topbar h1 {
+  font-size: 1.06em;
+  font-weight: 620;
+  white-space: nowrap;
+}
+
+.topbar .sub {
+  color: var(--ink-3);
+  font-size: 0.82em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar .grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.content {
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 26px 24px 96px;
+}
+
+.content.is-wide {
+  max-width: 1180px;
+}
+
+/* 训练页要占满，不要被 1040 卡住 */
+.content.is-stage {
+  max-width: 860px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section + .section {
+  margin-top: 26px;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.section-head .grow {
+  /* 标题和那句小字放一行（「已有的训练包 5 个」）。
+     早先是竖着的：hint 掉到标题底下，看着像标题被折断了。 */
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.section-head h2 {
+  font-size: 1.02em;
+}
+
+.section-head .hint {
+  font-size: 0.8em;
+  color: var(--ink-3);
+}
+
+@media (max-width: 880px) {
+  .side {
+    position: fixed;
+    bottom: 0;
+    top: auto;
+    left: 0;
+    right: 0;
+    width: 100%;
+    flex-basis: auto;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    border-right: none;
+    border-top: 1px solid var(--line);
+    z-index: 40;
+    overflow-x: auto;
+  }
+
+  .brand,
+  .side-block,
+  .side-spacer,
+  .side-foot .grow {
+    display: none;
+  }
+
+  .nav {
+    flex-direction: row;
+    flex: 1;
+  }
+
+  .nav-item .label {
+    font-size: 0.82em;
+  }
+
+  .content {
+    padding: 18px 16px 96px;
+  }
+
+  .topbar {
+    padding: 0 16px;
+  }
+}

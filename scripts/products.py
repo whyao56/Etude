@@ -74,9 +74,15 @@ def newest_output() -> Path | None:
     for parent in DIST.iterdir() if DIST.is_dir() else []:
         if not parent.is_dir():
             continue
-        exe = parent / LEAF / EXE_NAME
-        if exe.is_file():
-            candidates.append((exe.stat().st_mtime, parent / LEAF))
+        # 两种布局都要认：
+        #   dist/Etude/Etude.exe           第一次打包（--distpath 就是 dist/）
+        #   dist/build2/Etude/Etude.exe    之后的每一次（--distpath 是 dist/build2/）
+        # 只认后一种的话，第一次打完 e2e_check 会说「dist 里没有产物」——
+        # 而那个目录明明就在那儿。
+        for candidate in (parent / LEAF / EXE_NAME, parent / EXE_NAME):
+            if candidate.is_file():
+                candidates.append((candidate.stat().st_mtime, candidate.parent))
+                break
     if not candidates:
         return None
     return max(candidates)[1]

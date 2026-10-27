@@ -1,0 +1,192 @@
+/* 设计变量 —— 全套界面的唯一颜色来源。
+ *
+ * 规则：组件里**不许写死颜色**。要新颜色就在这里加变量。
+ * 0.1.0 换了整体气质：从「后台管理面板」换成「练琴房」——
+ * 暖纸底、墨字、一个靛蓝强调色，所有面都是同一层纸，不用层层阴影堆卡片。
+ */
+
+:root {
+  color-scheme: light;
+
+  /* 纸与墨 */
+  --bg: #f6f2ea;
+  --bg-grain: #f1ece2;
+  --surface: #fffdf8;
+  --surface-2: #f9f5ed;
+  --surface-3: #efe9dd;
+  --line: #e2dbcd;
+  --line-strong: #cfc5b2;
+
+  --ink: #23201b;
+  --ink-2: #5a534a;
+  --ink-3: #8d8579;
+
+  /* 强调色：靛蓝（点击、进度、焦点） */
+  --accent: #2f5fd0;
+  --accent-2: #1d47a8;
+  --accent-soft: #e5ebfb;
+  --accent-ink: #ffffff;
+
+  /* 语义色 */
+  --ok: #2c7a58;
+  --ok-soft: #e3f1e9;
+  --warn: #a86a12;
+  --warn-soft: #f8eeda;
+  --bad: #b03a34;
+  --bad-soft: #fbe7e5;
+
+  /* 四档评分的颜色：从「想不起来」到「秒答」 */
+  --g0: #b03a34;
+  --g0-soft: #fbe7e5;
+  --g1: #a86a12;
+  --g1-soft: #f8eeda;
+  --g2: #2f5fd0;
+  --g2-soft: #e5ebfb;
+  --g3: #2c7a58;
+  --g3-soft: #e3f1e9;
+
+  /* 形状 */
+  --r-lg: 18px;
+  --r-md: 12px;
+  --r-sm: 8px;
+  --r-xs: 6px;
+
+  --shadow-1: 0 1px 2px rgba(35, 32, 27, 0.06);
+  --shadow-2: 0 6px 20px -12px rgba(35, 32, 27, 0.35);
+  --shadow-lift: 0 18px 40px -28px rgba(35, 32, 27, 0.55);
+
+  /* 字体：正文优先系统无衬线，例句用衬线 —— 读句子时衬线更省力 */
+  --sans: "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --serif: "Iowan Old Style", "Palatino Linotype", "Georgia", "Songti SC", serif;
+  --mono: "JetBrains Mono", "Cascadia Mono", "Consolas", monospace;
+
+  /* 字号三档 */
+  --fs: 15px;
+  --lh: 1.65;
+  --stage-fs: 34px;
+  --stage-lh: 1.3;
+
+  /* 尺寸 */
+  --side: 244px;
+  --side-collapsed: 68px;
+  --gap: 18px;
+  --topbar: 60px;
+}
+
+html[data-size="s"] {
+  --fs: 13.5px;
+  --lh: 1.6;
+  --stage-fs: 28px;
+}
+
+html[data-size="l"] {
+  --fs: 16.5px;
+  --lh: 1.72;
+  --stage-fs: 40px;
+}
+
+/* 冷白：白天盯着屏幕、环境光很亮的时候用 */
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f6f8;
+  --bg-grain: #eef1f4;
+  --surface: #ffffff;
+  --surface-2: #f7f9fb;
+  --surface-3: #eaeef2;
+  --line: #dde3ea;
+  --line-strong: #c3ccd6;
+  --ink: #1a1d21;
+  --ink-2: #505963;
+  --ink-3: #868f9a;
+  --accent: #1d6fd0;
+  --accent-2: #14539c;
+  --accent-soft: #e3eefc;
+  --ok: #1f7a52;
+  --ok-soft: #e0f2ea;
+  --warn: #9a6608;
+  --warn-soft: #fbf0d8;
+  --bad: #b3332d;
+  --bad-soft: #fce8e6;
+  --g0: #b3332d;
+  --g0-soft: #fce8e6;
+  --g1: #9a6608;
+  --g1-soft: #fbf0d8;
+  --g2: #1d6fd0;
+  --g2-soft: #e3eefc;
+  --g3: #1f7a52;
+  --g3-soft: #e0f2ea;
+}
+
+/* 深色：夜间，低对比但不糊 */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #16181c;
+  --bg-grain: #1a1d22;
+  --surface: #1f2329;
+  --surface-2: #23272e;
+  --surface-3: #2b3038;
+  --line: #31363e;
+  --line-strong: #454c56;
+  --ink: #eceef1;
+  --ink-2: #b3b9c2;
+  --ink-3: #7d848e;
+  --accent: #7aa2ff;
+  --accent-2: #a8c2ff;
+  --accent-soft: #22304d;
+  --accent-ink: #10131a;
+  --ok: #66c69a;
+  --ok-soft: #1d3a2e;
+  --warn: #e0ac5a;
+  --warn-soft: #3a2f1a;
+  --bad: #f08a84;
+  --bad-soft: #3d2321;
+  --g0: #f08a84;
+  --g0-soft: #3d2321;
+  --g1: #e0ac5a;
+  --g1-soft: #3a2f1a;
+  --g2: #7aa2ff;
+  --g2-soft: #22304d;
+  --g3: #66c69a;
+  --g3-soft: #1d3a2e;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 6px 20px -12px rgba(0, 0, 0, 0.7);
+  --shadow-lift: 0 18px 40px -28px rgba(0, 0, 0, 0.9);
+}
+
+/* 跟随系统：只有 html 上没有 data-theme 时才生效 */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #16181c;
+    --bg-grain: #1a1d22;
+    --surface: #1f2329;
+    --surface-2: #23272e;
+    --surface-3: #2b3038;
+    --line: #31363e;
+    --line-strong: #454c56;
+    --ink: #eceef1;
+    --ink-2: #b3b9c2;
+    --ink-3: #7d848e;
+    --accent: #7aa2ff;
+    --accent-2: #a8c2ff;
+    --accent-soft: #22304d;
+    --accent-ink: #10131a;
+    --ok: #66c69a;
+    --ok-soft: #1d3a2e;
+    --warn: #e0ac5a;
+    --warn-soft: #3a2f1a;
+    --bad: #f08a84;
+    --bad-soft: #3d2321;
+    --g0: #f08a84;
+    --g0-soft: #3d2321;
+    --g1: #e0ac5a;
+    --g1-soft: #3a2f1a;
+    --g2: #7aa2ff;
+    --g2-soft: #22304d;
+    --g3: #66c69a;
+    --g3-soft: #1d3a2e;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 6px 20px -12px rgba(0, 0, 0, 0.7);
+    --shadow-lift: 0 18px 40px -28px rgba(0, 0, 0, 0.9);
+  }
+}

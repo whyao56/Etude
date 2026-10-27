@@ -50,50 +50,79 @@ etude/
 │   │   ├── paths.py            ★ 全项目唯一判断「在不在 exe 里」的地方
 │   │   ├── storage.py          数据目录搬迁（只写指针，从不删旧数据）
 │   │   ├── config.py           设置的读写 + 厂商预置 + 密钥脱敏
-│   │   ├── prompts.py          ★ 理论 → 提示词的那一层（含学习计划大纲）
+│   │   ├── prompts.py          ★ 理论 → 提示词（例句 / 大纲 / 主题起草）
 │   │   ├── providers/
 │   │   │   ├── llm.py          OpenAI 兼容协议 + 错误分诊
 │   │   │   ├── tts.py          Edge TTS / OpenAI TTS + 内容寻址缓存
-│   │   │   └── images.py       场景配图：图库检索 / 文生图 + 文件头嗅探
+│   │   │   ├── images.py       场景配图：图库检索 / 文生图 + 文件头嗅探
+│   │   │   └── asr.py          转写（跟读评分的「内容」项用）
 │   │   ├── pipeline.py         ★ 生成流水线（作业表 / 逐条失败不拖垮整体）
-│   │   ├── db.py               SQLite：五张表 + readiness 计算 + 迁移
+│   │   ├── pronounce.py        跟读评分引擎（WAV 解析 / 停顿 / LCS 词对齐）
 │   │   ├── srs.py              间隔重复（纯函数）
-│   │   ├── api.py              HTTP 接口
+│   │   ├── schemas.py          请求模型（pydantic）
+│   │   ├── runtime.py          进程启动时刻（被 /api/health 与测试共用）
+│   │   ├── api.py              ★ 装配层：线程池、include_router、错误处理器
+│   │   ├── routes/             HTTP 接口，按资源切（0.1.0 拆）
+│   │   │   ├── meta.py         health / selfcheck / 静态资源 / 首页
+│   │   │   ├── config.py       配置、预置、连接测试、catalog
+│   │   │   ├── lessons.py      训练包增删改、例句、补语音补图
+│   │   │   ├── batch.py        批量建包 + 主题起草
+│   │   │   ├── plans.py        学习计划与大纲
+│   │   │   ├── cards.py        队列、评分、撤销、卡片浏览器
+│   │   │   ├── pronounce.py    跟读上传、评分历史、录音回放
+│   │   │   ├── data.py         数据位置搬迁、备份
+│   │   │   ├── media.py        音频与图片回放
+│   │   │   └── _jobs.py        线程池转发（函数内懒导入，避免循环）
+│   │   ├── store/              SQLite，按谁改谁切（0.1.0 拆）
+│   │   │   ├── schema.py       ★ 连接、SCHEMA、迁移、通用查询
+│   │   │   ├── lessons.py      训练包与例句读写
+│   │   │   ├── cards.py        复习调度、评分、撤销
+│   │   │   ├── plans.py        学习计划
+│   │   │   ├── readiness.py    完整度与统计
+│   │   │   └── attempts.py     跟读尝试
+│   │   ├── db.py               门面：`from .store import *`（保持既有调用不变）
 │   │   ├── server.py           端口选择 + 优雅停止
 │   │   ├── desktop.py          原生窗口，失败返回 False
-│   │   └── selfcheck.py        九项自检
-│   ├── frontend/index.html     单文件界面（零构建、零 CDN）
-│   └── tests/                  187 项测试
+│   │   └── selfcheck.py        十一项自检
+│   ├── frontend/               零构建、零 CDN
+│   │   ├── index.html          只有壳和一句 <script type="module">
+│   │   ├── css/                tokens / base / layout / components / views
+│   │   └── js/
+│   │       ├── main.js         装配：路由、侧栏、横幅、全局错误
+│   │       ├── version.js      ★ APP_VERSION（必须与 app/__init__.py 一致）
+│   │       ├── core/           dom / api / store / router / ui / audio / wav / recorder
+│   │       └── views/          study / lessons / lesson / plans / cards / settings / pronounce
+│   └── tests/                  316 项测试
 ├── scripts/
 │   ├── build_exe.py            打包编排
 │   ├── make_release.py         发版
 │   ├── e2e_check.py            对打包版打真实 HTTP
 │   ├── ui_smoke.js             真浏览器点一遍
-│   ├── screenshots.js          出文档截图
+│   ├── screenshots.js          出文档截图（自己起服务 + 全新临时数据目录）
 │   ├── openai_stub.py          本地假模型
 │   ├── products.py             ★ 打包产物在哪（三个脚本共用的判断）
 │   ├── cdp.js                  自写 CDP 客户端
-│   └── check_js.py             前端静态守卫
+│   └── check_frontend.py       前端静态守卫（导入 / 图标 / 类名 / 版本）
 ├── build/
 │   ├── etude.spec              打包配置（源文件，要提交）
 │   └── size-baseline.json      体积基线
 └── docs/
 ```
 
-带 ★ 的五个文件是「改动风险最高」的。下面逐个说为什么。
+带 ★ 的文件是「改动风险最高」的。下面逐个说为什么。
 
 ---
 
 ## 三、数据模型
 
-五张表，全部在 `backend/app/db.py` 的 `SCHEMA` 里。用扁平字典出入，
+六张表，全部在 `backend/app/store/schema.py` 的 `SCHEMA` 里。用扁平字典出入，
 不引 ORM —— 这些数据最终要原样变成 JSON 给前端，字典省掉一次转换；
 而且没有编译器的项目里，ORM 的字段名拼错只会在运行时炸。
 
 ```
-plans ──── lessons ──┬── examples ──┬── cards ── reviews
-                     │              │
-                     └── swaps ─────┘（swaps 挂在 lesson 上，不挂 example）
+plans ──── lessons ──┬── examples ──┬── cards ──┬── reviews
+                     │              │           └──（attempts 挂在 example / card 上）
+                     └── swaps ─────┘
 ```
 
 | 表 | 一行是什么 | 关键字段 |
@@ -102,12 +131,22 @@ plans ──── lessons ──┬── examples ──┬── cards ──
 | `lessons` | 一个训练包 | `target`（用户输入的那个词/句）、`kind`、`status`、`error`、`language`、`plan_id`(0 = 不属于任何计划) |
 | `examples` | 一条例句 | `sentence`、`scene_en`、`scene_zh`、`zh_variants`(JSON)、`audio_path`、`audio_voice`、`scene_image`、`image_query`(JSON) |
 | `swaps` | 一组换词候选 | `role`(主/谓/宾)、`original`、`candidates`(JSON)、`samples`(JSON) |
-| `cards` | 一张卡 = (例句, 通道) | `due_at`、`interval`、`ease`、`reps`、`lapses`、`introduced`、`suspended`(0.0.3) |
+| `cards` | 一张卡 = (例句, 通道) | `due_at`、`interval`、`ease`、`reps`、`lapses`、`introduced`、`suspended`(0.0.3)、`best_score`(0.1.0) |
 | `reviews` | 一次评分 | `card_id`、`grade`、`seconds`、`at`、`prev_state`(0.0.3，评分**之前**的 SRS 快照，JSON) |
+| `attempts` | 一次跟读（0.1.0） | `card_id`、`example_id`、`mode`(acoustic/mixed)、`score`、`seconds`、`audio`、`detail`(JSON，四项指标的明细)、`at` |
 
 **`cards.suspended` 是「暂停」，不是「删除」**（0.0.3 加的，即 Anki 的 suspend）。
 「今天不想看这一批」是真实需求，但删掉会连进度一起丢掉。暂停的卡：
 不进 `due_cards()` 队列、不计入 `stats().due_now`，但行还在，随时能恢复。
+
+**`cards.best_score` 只给人看，不参与调度**（0.1.0 加的）。
+跟读分存在这里；要是拿它排期，读不准音的人会永远卡在 10 分钟档 ——
+那是惩罚，不是复习。这条是 `store/attempts.py` 里写在 `MAX()` 旁边的原因。
+
+**`attempts` 和 `reviews` 是两条独立的线**：`reviews` 记「你给自己打了什么分」，
+决定下次什么时候见；`attempts` 记「你念得怎么样」，只用来回答
+「这一句我比上个月进步了吗」。同一张口语卡可以先跟读三次再评一次分。
+
 
 **`reviews.prev_state` 存的是评分前的状态**（0.0.3 加的），撤销时原样写回。
 为什么不拿公式反推：反推会因为浮点累积误差导致「撤销之后进度变了」。
@@ -224,7 +263,7 @@ except TTSError as exc:
 ### 4.5 前端事件名必须小写
 
 ```javascript
-// backend/frontend/index.html   el()
+// backend/frontend/js/core/dom.js   el()
 else if (key.slice(0, 2) === "on") {
   node.addEventListener(key.slice(2).toLowerCase(), value);
 }
@@ -232,7 +271,7 @@ else if (key.slice(0, 2) === "on") {
 
 **这是踩过的最大一个坑**：`addEventListener("Click", ...)` 既不报错也不触发。
 界面照常画出来、截图看不出来、Python 测试也测不到 ——
-所有按钮都是死的。`scripts/check_js.py` 里有两条守卫盯着它
+所有按钮都是死的。`tests/test_guards.py` 里有两条守卫盯着它
 （一条查字面量、一条查探针本身会不会漏报）。
 
 ### 4.6 端口被占用时先问「对面是不是自己」
@@ -260,7 +299,7 @@ else if (key.slice(0, 2) === "on") {
 ### 4.8 迁移必须跑在建表之前
 
 ```python
-# backend/app/db.py  connect()
+# backend/app/store/schema.py  connect()
 conn = sqlite3.connect(...)
 _migrate(conn)              # ← 先迁移
 conn.executescript(SCHEMA)  # ← 再建表
@@ -387,12 +426,14 @@ finally:
 
 ## 五、HTTP 接口
 
-全部在 `backend/app/api.py`。划分是「页面对应一组」，不是 REST 教科书式分法。
+全部在 `backend/app/routes/` 下，按资源分文件（0.1.0 从单文件 `api.py` 拆出来的）。
+划分是「页面对应一组」，不是 REST 教科书式分法。
+`app/api.py` 只剩装配：线程池、`include_router`、500 处理器。
 
 | 方法 | 路径 | 干什么 |
 |---|---|---|
 | GET | `/api/health` | **自述**：版本、pid、运行形态、数据目录。旧进程一眼可辨 |
-| GET | `/api/selfcheck` | 八项自检结果（界面「设置」页那个按钮） |
+| GET | `/api/selfcheck` | 十一项自检结果（界面「设置」页那个按钮） |
 | GET | `/api/config` | 读设置。**api_key 永远不在这里面** |
 | POST | `/api/config` | 改设置（局部更新） |
 | POST | `/api/config/preset` | 切厂商：把 base_url / 模型名一整套换掉 |
@@ -421,9 +462,28 @@ finally:
 | POST | `/api/examples/{id}/audio` | 只重做这一条的语音（0.0.3） |
 | POST | `/api/examples/{id}/image` | 只重做这一条的配图（0.0.3） |
 | POST | `/api/lessons/{id}/rebuild-cards` | 补齐「有例句没卡」的缺口，**不动已有进度**（0.0.3） |
+| POST | `/api/lessons/batch` | 一次贴一串词/句，建多个包（0.1.0） |
+| POST | `/api/lessons/batch/draft` | 给一个主题，让模型起草目标清单（**不动库**，0.1.0） |
+| POST | `/api/cards/{id}/attempt` | 上传跟读 WAV，当场评分 + 存录音（0.1.0） |
+| POST | `/api/examples/{id}/attempt` | 同上，但作用在一条例句上（不依赖队列，0.1.0） |
+| GET | `/api/attempts` | 跟读历史与汇总（次数/最高/最近/进步，0.1.0） |
+| GET | `/api/recordings/{name}` | 回放自己念的那一版。白名单正则（0.1.0） |
+| GET | `/api/pronounce` | 跟读功能现在能测什么（要不要转写服务，0.1.0） |
+| POST | `/api/pronounce/check` | 真跑一遍转写链路（0.1.0） |
 | GET | `/api/stats` | 统计（含 `suspended`） |
 | POST | `/api/backup` | 备份（`VACUUM INTO`） |
 | GET | `/` | 界面 HTML，`no-store` |
+| GET | `/static/{path}` | 前端模块与样式。**同样 `no-store`**，见下 |
+
+### 前端拆成多文件之后，`/static/` 为什么自己写而不用 `StaticFiles`
+
+挂 `StaticFiles` 会顺手带上它自己的缓存头。这里要的是「跟 HTML 一样永不缓存」：
+换了版本之后，缓存里留着一个旧 `study.js` 配一个新后端，
+是这类项目里最难查的一类问题（界面上有一段行为不对，但没有任何报错）。
+
+所以路由里手写：`root = frontend_dir().resolve()`、`target = (root / path).resolve()`，
+**解析完再比前缀**（只比字符串的话 `js/../../config.json` 能穿过去），
+后缀白名单只放 `.js/.css/.svg/.png/.woff2`。
 
 ### 几个刻意的选择
 
@@ -479,24 +539,48 @@ RELEARN_MINUTES = 10.0
 
 ## 七、前端
 
-`backend/frontend/index.html`，约 4,500 行，**单文件、零构建、零 CDN**。
+`backend/frontend/`：原生 ES 模块 + 分包 CSS，**零构建、零 CDN**。
+0.1.0 之前它是一个 4,500 行的 `index.html`；现在拆成 17 个模块，
+`index.html` 只剩壳和一句 `<script type="module" src="/static/js/main.js">`。
+
+```
+frontend/
+├── index.html        壳：侧栏、顶栏、#app、#toasts、#overlay-host
+├── css/              tokens（配色与尺寸）→ base（重置）→ layout → components → views
+└── js/
+    ├── main.js       装配：路由分发、侧栏、横幅、全局错误
+    ├── version.js    APP_VERSION（必须与后端 __version__ 一致）
+    ├── core/         dom / api / store / router / ui / audio / wav / recorder
+    └── views/        study / lessons / lesson / plans / cards / settings / pronounce
+```
+
 （这份文档里凡是写死行数的地方都容易过时 —— 行数是**结论**，
 不是需要维护的事实。数字不对时以 `wc -l` 为准。）
 
 | 决定 | 为什么 |
 |---|---|
 | 不用任何 CDN | **断网也要能练**。这是本地工具，例句和语音都在本机，没道理打开界面还要等一个 jsdelivr 请求 |
-| 不用框架 | 没有编译步骤 = 双击 `index.html` 就能调界面。代价是失去编译期检查，用 `check_js.py` 补 |
+| 原生 ES 模块，不上打包器 | 拆文件是为了能改；一旦引入构建步骤，「双击就能调界面」这条就没了 |
+| 不用框架 | 没有编译步骤 = 改完刷新就能看。代价是失去编译期检查，用 `check_frontend.py` 补 |
 | 不用 `innerHTML` 拼字符串 | 例句里有用户输入的目标词，拼字符串就是 XSS 入口。全部走 `el(tag, attrs, children)` 建 DOM |
-| hash 路由 | `#/study` `#/lessons` `#/settings`。刷新不会 404，不需要服务端配合 |
+| hash 路由 | `#/study`、`#/lessons/<id>`、`#/plans/<id>`、`#/settings`。刷新不 404，不需要服务端配合 |
 | 每包独立轮询 | `pollTimers = new Map()`，键是 lesson_id。共享一个定时器的话，同时生成多个包只有最后一个会被轮询 |
+| 录音用 WebAudio 自己编 WAV | `MediaRecorder` 给的是 webm/opus，后端解不了；为了它塞一个 ffmpeg 不值得 |
+| 评分区 `position: sticky` | 翻面之后内容变高，评分键会被挤到视口外（实测 882 高的窗口里在 y=937）。键盘能按、鼠标点不到 |
 
 **`el()` 的 attrs 分三类**：`on*` 走 `addEventListener`（**转小写**）、
 `className`/`textContent` 直接赋值、其余走 `setAttribute`。
 
+**改前端的顺序**：改完先 `python scripts/check_frontend.py`
+（导入 / 图标 / 类名 / 版本四项），再 `node scripts/ui_smoke.js`
+（真鼠标点一遍），最后才看截图。类名对不上不会报错 ——
+页面只是看起来「没做完」，这条守卫就是为它写的。
+
 **全局错误兜底**：`window.addEventListener("error"/"unhandledrejection")`
 把异常摆到页面顶部的 banner 上。没有这个的话，JS 出错只会让界面
 「安静地不响应」，用户完全不知道该反馈什么。
+（横幅只在当前页有效：`paint()` 开头会清掉上一页留下的非 sticky 横幅 ——
+否则「上一页报的错」会挂在「这一页」顶上，看着像这一页也坏了。）
 
 ---
 
@@ -535,7 +619,10 @@ torch 相关的东西，PyInstaller 会顺着 import 图把它们全拉进来 �
 ```python
 required = ["fastapi", "starlette", "uvicorn.protocols.http.h11_impl",
             "edge_tts", "httpx", "app.api", "app.pipeline",
-            "app.providers.llm", "app.providers.tts", "app.selfcheck"]
+            "app.providers.llm", "app.providers.tts", "app.providers.asr",
+            "app.selfcheck", "app.store", "app.store.cards", "app.store.lessons",
+            "app.store.attempts", "app.routes.lessons", "app.routes.batch",
+            "app.routes.pronounce", "app.pronounce"]
 ```
 
 用 PyInstaller 自己的归档读取器查（不用 `grep` 二进制 —— 那会有一堆假阳性），
@@ -578,21 +665,23 @@ dist/build3/Etude       第三次
 
 | 手段 | 覆盖什么 | 为什么不能用别的手段 |
 |---|---|---|
-| `pytest`（113 项） | 逻辑、边界、错误方向 | —— |
-| `check_js.py` | 前端调用点、事件名大小写 | 零构建项目没有编译器，这是补偿 |
+| `pytest`（316 项） | 逻辑、边界、错误方向 | —— |
+| `check_frontend.py` | 模块导入、图标名、类名与 CSS 对账、版本一致 | 零构建项目没有编译器，这是补偿 |
 | `ui_smoke.js` | 真浏览器里点一遍 + 收集控制台错误 | Python 测试测不到「点了没反应」 |
+| `screenshots.js` | 16 张图，自己起服务 + 全新临时数据目录 | 界面「看起来没做完」只有人眼能判 |
 | `e2e_check.py` | 对**打包版**打真实 HTTP | 源码态跑通 ≠ 打包后跑通 |
 | `build_exe.py` 归档核对 | 打包后模块到底在不在 | 只看 exit code 会漏掉「打出来了但是空的」 |
 | 冻结态 `--check` | 打包后自检 | 同上 |
 
-**守卫式的测试要能证明自己会失败。** `check_js.py` 里有一组
+**守卫式的测试要能证明自己会失败。** `check_frontend.py` 里有一组
 `_SELF_TEST_SAMPLES`，每次运行前先验探针本身；`test_guards.py` 里也有
-反证用例（比如 `test_event_name_guard_would_catch_the_old_writing` 故意喂
-一个 `onClick` 进去，断言守卫会报）。
+反证用例（临时造一对 js 文件，把导出改个名、把图标拼错、写一个 CSS 里
+不存在的类名，断言守卫会报）。
 
 **为什么**：探针坏了会伪装成被测对象坏了。这个项目上真发生过一次 ——
-`check_js.py` 的清洗器被一个正则字面量里的单引号骗了，
-把一大段代码当成字符串吃掉，然后报了 8 个「你的函数未定义」的假警报。
+`check_js.py`（0.1.0 已被 `check_frontend.py` 取代）的清洗器
+被一个正则字面量里的单引号骗了，把一大段代码当成字符串吃掉，
+然后报了 8 个「你的函数未定义」的假警报。
 没有探针自检的话，那 8 个警报会把人引到完全错误的方向。
 
 ---
@@ -605,8 +694,8 @@ dist/build3/Etude       第三次
 | 加一个通道 | `db.CHANNELS`、`frontend` 的 `VIEWS`/渲染分支、`config` 的默认值 | 老数据的 `cards` 表不会有新通道的行，得有个补卡迁移 |
 | 加一个模型厂商 | `providers/llm.py` 的 `PRESETS`（一处） | 如果是非 OpenAI 兼容协议，那是另一件事 |
 | 改提示词 | `prompts.py` 的 `SYSTEM` | 跑一遍 `test_prompts_forbid_translation_shaped_scenes` |
-| 改前端 | `frontend/index.html` | 跑 `check_js.py` + `ui_smoke.js` |
+| 改前端 | `frontend/js/views/*.js` + `frontend/css/views.css` | 跑 `check_frontend.py` + `ui_smoke.js` |
 | 加一个配图来源 | `providers/images.py` 的 `IMAGE_SOURCES` + `provide()` 的分支 | **`IMAGE_SOURCES[0]` 就是默认值**（界面第一个）。老配置里写着别的词时会退回 `search`，别改成报错 |
 | 加一个音频引擎 | `providers/tts.py` 的 `resolve_voice()` + `synthesize()` | 音色的取法**只能有这一处**，见 4.11 |
-| 加一个配色 | `index.html` 里 `<style>` 的 `:root` / `html[data-theme=...]` + `THEMES` | 三个地方要一起加：`:root`（暖白默认）、`@media (prefers-color-scheme: dark)`、`html[data-theme="..."]`。`ui_smoke.js` 会逐个验底色 |
+| 加一个配色 | `frontend/css/tokens.css` 的 `:root` / `@media (prefers-color-scheme: dark)` / `html[data-theme=...]` + `js/core/store.js` 的 `THEMES` | 四处要一起加：三套变量定义 + `THEMES` 里那一项。`ui_smoke.js` 会逐个验底色 |
 | 改打包 | `build/etude.spec` | 重新跑 `build_exe.py`（归档核对会告诉你有没有切坏）。**发版前确认 `dist/` 里最新那个目录真的是这一版** —— `make_release.py` 现在会核对，但它拦不住你没重新构建 |

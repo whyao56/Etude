@@ -42,8 +42,23 @@ jobs:
       # 守卫单独再跑一次，为了在日志里**单独可见**。
       # 它在 pytest 里也被跑（test_guards.py），但那一条失败时会淹没在
       # 几百行输出里，而前端问题恰恰是最需要一眼看到的那类。
-      - name: 前端守卫（调用点 + 事件名大小写）
-        run: python scripts/check_js.py
+      - name: 前端守卫（导入 + 图标 + 类名 + 版本）
+        run: python scripts/check_frontend.py
+
+      - name: 前端模块语法检查
+        # 浏览器遇到语法错只会静默地少一块功能（整个模块不执行），
+        # 在 CI 里逐个 node --check 比在用户机器上猜便宜得多。
+        shell: bash
+        run: |
+          if ! command -v node >/dev/null 2>&1; then
+            echo "没有 node，跳过"
+            exit 0
+          fi
+          fail=0
+          while IFS= read -r f; do
+            node --check "$f" || fail=1
+          done < <(find backend/frontend/js -name '*.js')
+          exit $fail
 
   # 打包本身不在 CI 里做：PyInstaller 出包要几分钟、产物几百 MB，
   # 而且 Actions 的产物没有 Release 附件那个稳定 URL。
@@ -105,6 +120,8 @@ jobs:
         run: |
           # 例句里有用户输入的目标词，拼 innerHTML 就是 XSS 入口。
           # 允许出现 innerHTML 的地方只有一处：清空容器（= ""）。
-          if grep -nE 'innerHTML\s*=' backend/frontend/index.html | grep -vE '=\s*(""|\x27\x27)\s*;'; then
-            echo "::warning::index.html 出现了非清空用途的 innerHTML 赋值，请确认没有拼接用户输入"
+          # 0.1.0 起前端是 17 个模块，扫整个目录。
+          if grep -rnE 'innerHTML\s*=' backend/frontend --include='*.js' --include='*.html' \
+             | grep -vE '=\s*(""|\x27\x27)\s*;'; then
+            echo "::warning::前端出现了非清空用途的 innerHTML 赋值，请确认没有拼接用户输入"
           fi

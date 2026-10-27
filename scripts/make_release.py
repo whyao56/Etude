@@ -157,18 +157,18 @@ def assert_dist_version(dist: Path, tag_version: str) -> None:
     """
     marker = None
     for candidate in (
-        dist / "_internal" / "frontend" / "index.html",
-        dist / "frontend" / "index.html",
+        dist / "_internal" / "frontend" / "js" / "version.js",
+        dist / "frontend" / "js" / "version.js",
     ):
         if candidate.is_file():
             marker = candidate
             break
     if marker is None:
         raise SystemExit(
-            f"{dist} 里找不到 frontend/index.html，没法确认这个产物的版本。\n"
+            f"{dist} 里找不到 frontend/js/version.js，没法确认这个产物的版本。\n"
             "重跑一次 scripts/build_exe.py。"
         )
-    match = re.search(r'const\s+APP_VERSION\s*=\s*"([^"]+)"', marker.read_text(encoding="utf-8"))
+    match = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', marker.read_text(encoding="utf-8"))
     if not match:
         raise SystemExit(f"{marker} 里找不到 APP_VERSION。")
     if match.group(1) != tag_version:

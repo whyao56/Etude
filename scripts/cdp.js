@@ -26,6 +26,12 @@ class Browser {
     this.chromePath = opts.chromePath || DEFAULT_CHROME;
     this.width = opts.width || 1280;
     this.height = opts.height || 940;
+    // 额外命令行。目前唯一的用处是给跟读测试塞一个假麦克风：
+    //   extraArgs: ["--use-fake-device-for-media-stream",
+    //               "--use-fake-ui-for-media-stream",
+    //               "--use-file-for-fake-audio-capture=<wav>"]
+    // 不塞的话 getUserMedia 在无头 Chrome 里会一直挂着等权限。
+    this.extraArgs = opts.extraArgs || [];
     this.consoleErrors = [];
     this.pageErrors = [];
     this._pending = new Map();
@@ -60,6 +66,7 @@ class Browser {
         `--remote-debugging-port=${port}`,
         `--user-data-dir=${userDataDir}`,
         `--window-size=${this.width},${this.height}`,
+        ...this.extraArgs,
         "about:blank",
       ],
       { stdio: "ignore" }
@@ -164,8 +171,19 @@ class Browser {
   }
 
   async setTheme(theme) {
-    // 主题存在 localStorage 里，所以要先写进去再刷新。
-    await this.evaluate(`localStorage.setItem('etude-theme', ${JSON.stringify(theme)})`);
+    // 外观偏好整套存在 localStorage 的 etude-prefs 里（0.1.0 起）。
+    // 只改 etude-theme 那种单键写法在 0.1.0 已经不生效了。
+    await this.evaluate(`(() => {
+      let prefs = {};
+      try {
+        prefs = JSON.parse(localStorage.getItem("etude-prefs") || "{}");
+      } catch (err) {
+        prefs = {};
+      }
+      prefs.theme = ${JSON.stringify(theme)};
+      localStorage.setItem("etude-prefs", JSON.stringify(prefs));
+      return true;
+    })()`);
     await this.reload();
   }
 

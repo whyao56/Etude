@@ -66,7 +66,9 @@ def version() -> str:
 def preflight() -> None:
     print("[1/5] 前置检查")
 
-    result = run([python_exe(), str(ROOT / "scripts" / "check_js.py")],
+    # 0.1.0 起前端是一堆 ES 模块，check_js.py 那套「从 index.html 抠 script」
+    # 的做法整个失效了 —— 换成了 check_frontend.py（查导入、图标、类名、版本）。
+    result = run([python_exe(), str(ROOT / "scripts" / "check_frontend.py")],
                  capture_output=True)
     if result.returncode != 0:
         print(result.stdout or "", result.stderr or "")
@@ -74,8 +76,8 @@ def preflight() -> None:
     print("      " + (result.stdout or "").strip())
 
     backend_version = version()
-    html = (BACKEND / "frontend" / "index.html").read_text(encoding="utf-8")
-    match = re.search(r'const\s+APP_VERSION\s*=\s*"([^"]+)"', html)
+    version_js = (BACKEND / "frontend" / "js" / "version.js").read_text(encoding="utf-8")
+    match = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', version_js)
     if not match or match.group(1) != backend_version:
         raise SystemExit(
             f"版本号不一致：后端 {backend_version}，"
@@ -152,7 +154,18 @@ def verify_archive(out_dir: Path) -> list[str]:
         "app.pipeline",
         "app.providers.llm",
         "app.providers.tts",
+        "app.providers.asr",
         "app.selfcheck",
+        # 0.1.0 拆出来的包：拆完最容易出的意外是「某个路由模块没被静态分析追到」，
+        # 打包成功、启动成功，只有点进去那个页面才 404。
+        "app.store",
+        "app.store.cards",
+        "app.store.lessons",
+        "app.store.attempts",
+        "app.routes.lessons",
+        "app.routes.batch",
+        "app.routes.pronounce",
+        "app.pronounce",
     ]
     missing = [name for name in required if name not in names]
 
