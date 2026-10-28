@@ -100,6 +100,20 @@ def human(n: int) -> str:
     return f"{n / 1048576:.1f} MB"
 
 
+_IMAGE_LINK = re.compile(r"\]\((docs/images/[^)\s]+)\)")
+
+
+def github_body(notes: str, repo: str, tag: str) -> str:
+    """把发行说明里的相对图片链接换成 raw 地址。
+
+    GitHub 的 release 正文是独立渲染的：`![](docs/images/01.png)` 不会
+    相对仓库解析，发出去就是三个坏掉的图。钉在 tag 上（而不是 main），
+    这样以后改 README 里的图也不会把这个版本的说明带坏。
+    """
+    base = f"https://raw.githubusercontent.com/{repo}/{tag}/"
+    return _IMAGE_LINK.sub(lambda m: "](" + base + m.group(1) + ")", notes)
+
+
 def token() -> str:
     """从 git 凭据管理器取。不落盘、不打印。"""
     try:
@@ -295,6 +309,7 @@ def main() -> int:
     if not notes_path.is_file():
         raise SystemExit(f"找不到发行说明 {notes_path}，先写一份再发。")
     notes = notes_path.read_text(encoding="utf-8")
+    body = github_body(notes, args.repo, tag)
 
     # 校验和要印在发行说明里。如果不一致，说明说明是旧版本留下的 ——
     # 那正是「文档和产物对不上」的经典症状，宁可拦住也不要发出去。
@@ -335,12 +350,12 @@ def main() -> int:
     if existing:
         release_id = existing["id"]
         call("PATCH", f"{API}/repos/{args.repo}/releases/{release_id}", tok,
-             {"body": notes, "draft": False})
+             {"body": body, "draft": False})
     else:
         status, created = call("POST", f"{API}/repos/{args.repo}/releases", tok, {
             "tag_name": tag,
             "name": f"Etude {ver}",
-            "body": notes,
+            "body": body,
             "draft": False,
             "prerelease": ver.startswith("0.0."),
         })
