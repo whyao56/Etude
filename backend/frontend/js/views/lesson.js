@@ -1,4 +1,4 @@
-﻿/* 训练包详情：一包里的每条句子都在这里，能听、能看、能改、能单练。
+/* 训练包详情：一包里的每条句子都在这里，能听、能看、能改、能单练。
  *
  * 0.0.x 这里进不了地址栏，刷新就掉回列表 —— 0.1.0 起 `#/lessons/<id>` 就是它。
  * 详情页承担的是「素材出了问题就地修」：缺语音补语音、缺图补图、
@@ -122,6 +122,24 @@ function summaryCard(host, lesson) {
   if (lesson.status === "failed" && lesson.error) {
     box.appendChild(el("div", { class: "err" }, [el("b", { text: lesson.error })]));
   }
+
+  // 这一包的两个正经动作放最上面：进来最可能就是想「练这个」。
+  const acts = el("div", { class: "row", style: { gap: "8px", marginTop: "10px" } });
+  acts.append(
+    el("button", {
+      class: "btn primary sm",
+      type: "button",
+      text: "练这个包",
+      onclick: () => practiceLesson(lesson),
+    }),
+    el("button", {
+      class: "btn ghost sm",
+      type: "button",
+      text: "导出 JSON",
+      onclick: () => exportLesson(lesson),
+    }),
+  );
+  box.appendChild(acts);
   return box;
 }
 
@@ -155,24 +173,37 @@ function readinessCard(host, lesson) {
   }
 
   const actions = el("div", { class: "row" });
-  const audioBtn = el("button", { class: "btn", type: "button", text: "补齐缺的语音" });
-  audioBtn.addEventListener("click", async () => {
-    audioBtn.disabled = true;
-    audioBtn.textContent = "正在合成…";
-    try {
-      const res = await post(`/api/lessons/${lesson.id}/audio`, {});
-      toast(res.skipped ? res.skipped : `补了 ${res.ok || 0} 条语音。`, "ok");
-      await render(host, lesson.id);
-    } catch (err) {
-      toast(err.message, "bad");
-      audioBtn.disabled = false;
-      audioBtn.textContent = "补齐缺的语音";
-    }
-  });
-  actions.appendChild(audioBtn);
+  // 只在真的缺东西时才给按钮：
+  // 以前语音已经齐了，「补齐缺的语音」还挂在那里，点一下什么都不会发生。
+  const missingAudio = (ready.missing_audio_ids || []).length;
+  if (missingAudio > 0) {
+    const audioBtn = el("button", {
+      class: "btn",
+      type: "button",
+      text: `补齐 ${missingAudio} 条语音`,
+    });
+    audioBtn.addEventListener("click", async () => {
+      audioBtn.disabled = true;
+      audioBtn.textContent = "正在合成…";
+      try {
+        const res = await post(`/api/lessons/${lesson.id}/audio`, {});
+        toast(res.skipped ? res.skipped : `补了 ${res.ok || 0} 条语音。`, "ok");
+        await render(host, lesson.id);
+      } catch (err) {
+        toast(err.message, "bad");
+        audioBtn.disabled = false;
+        audioBtn.textContent = `补齐 ${missingAudio} 条语音`;
+      }
+    });
+    actions.appendChild(audioBtn);
+  }
 
-  if (ready.images_expected) {
-    const imgBtn = el("button", { class: "btn", type: "button", text: "补齐缺的配图" });
+  if (ready.images_expected && (ready.missing_image_ids || []).length > 0) {
+    const imgBtn = el("button", {
+      class: "btn",
+      type: "button",
+      text: `补齐 ${(ready.missing_image_ids || []).length} 张配图`,
+    });
     imgBtn.addEventListener("click", async () => {
       imgBtn.disabled = true;
       imgBtn.textContent = "正在配图…";
@@ -223,16 +254,24 @@ function examplesCard(host, lesson) {
 }
 
 function exampleRow(host, lesson, example) {
-  const row = el("div", { class: "example-row" });
+  const imagesExpected = Boolean((lesson.readiness || {}).images_expected);
+  // 没开配图时就别再留一块 200×140 的虚线框写着「没有图」——
+  // 那不是「缺了什么」，是这个功能本来就没开。
+  const row = el("div", { class: imagesExpected ? "example-row" : "example-row no-media" });
 
-  const media = el("div", { class: "example-media" });
-  if (example.scene_image) {
-    const img = el("img", { src: imageUrl(example.scene_image), alt: "", loading: "lazy" });
-    img.addEventListener("click", () => zoomImage(imageUrl(example.scene_image)));
-    img.addEventListener("error", () => media.replaceChildren(el("div", { class: "imgfail", text: "图打不开了" })));
-    media.appendChild(img);
-  } else {
-    media.appendChild(el("div", { class: "imgfail", text: "没有图" }));
+  if (imagesExpected) {
+    const media = el("div", { class: "example-media" });
+    if (example.scene_image) {
+      const img = el("img", { src: imageUrl(example.scene_image), alt: "", loading: "lazy" });
+      img.addEventListener("click", () => zoomImage(imageUrl(example.scene_image)));
+      img.addEventListener("error", () => media.replaceChildren(el("div", { class: "imgfail", text: "图打不开了" })));
+      media.appendChild(img);
+    } else {
+      media.appendChild(el("div", { class: "imgfail", text: "没有图" }));
+    }
+    // 这里就把它挂上；下面 body 挂自己的。分两次 append 比
+    // 「最后统一 append(media, body)」省一个模块级变量（那个变量漏了会直接白页）。
+    row.appendChild(media);
   }
 
   const body = el("div", { class: "example-body" });
@@ -300,12 +339,12 @@ function exampleRow(host, lesson, example) {
 
   body.appendChild(actions);
   body.appendChild(tools);
-  row.append(media, body);
+  row.append(body);
   return row;
 }
 
 function playButton(example) {
-  const button = el("button", { class: "btn sm", type: "button" }, [
+  const button = el("button", { class: "btn sm ghost", type: "button" }, [
     el("span", { class: "ico", dataset: { icon: "play" } }),
     el("span", { text: "听" }),
   ]);
@@ -334,6 +373,40 @@ function practiceOne(lesson, card, host) {
   go("study");
   const app = document.getElementById("app");
   if (app) renderStudy(app);
+}
+
+/* 整个包一起练：队列就是这一包的全部卡。
+ * 按 lesson_id → example_id → 通道顺序排过（后端 due_cards 的排法），
+ * 所以同一个句子的五个通道会连着出现，练起来是「同一条句子换个出口」。 */
+function practiceLesson(lesson) {
+  const cards = (lesson.cards || []).filter((card) => !card.suspended);
+  if (!cards.length) {
+    toast("这一包还没生成卡片。", "warn");
+    return;
+  }
+  state.queue = cards.map((card) => ({ id: card.id }));
+  state.cursor = 0;
+  state.current = null;
+  state.revealed = false;
+  state.session = { done: 0, skipped: 0, history: [], startedAt: Date.now() };
+  go("study");
+  const app = document.getElementById("app");
+  if (app) renderStudy(app);
+}
+
+function exportLesson(lesson) {
+  get(`/api/lessons/${lesson.id}/export`)
+    .then((data) => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = el("a", { href: url, download: `etude-${lesson.target.replace(/[^\w-]+/g, "-")}.json` });
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      toast("导出了（语音和图不在文件里，它们太大）。", "ok");
+    })
+    .catch((err) => toast(err.message || "导出失败。", "bad"));
 }
 
 function openPronounce(example) {

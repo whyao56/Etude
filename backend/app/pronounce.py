@@ -476,6 +476,9 @@ def evaluate(
         "heard": heard,
         "asr_error": asr_error,
         "advice": _advice(items),
+        # 逐词命中。只有真的做了转写才有 —— 声学模式下不知道你念了哪些词，
+        # 编一份「全命中」出来会让人以为发音没问题，那是假信息。
+        "words": align_words(target, heard)["items"] if (asr_used and target) else [],
     }
 
 

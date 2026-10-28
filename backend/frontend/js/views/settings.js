@@ -16,7 +16,19 @@ import {
   savePrefs,
   state,
 } from "../core/store.js";
-import { chip, errorBlock, field, loading, setPage, toast } from "../core/ui.js";
+import { chip, errorBlock, field, loading, sectionHead, setPage, toast } from "../core/ui.js";
+
+const SECTION_IDS = ["look", "llm", "tts", "images", "study", "pronounce", "selfcheck", "data"];
+const SECTION_LABEL = {
+  look: "外观",
+  llm: "大模型",
+  tts: "语音",
+  images: "配图",
+  study: "学习量",
+  pronounce: "发音",
+  selfcheck: "自检",
+  data: "数据",
+};
 
 export async function render(host) {
   setPage({ title: "设置", sub: "外部服务、学习量、数据位置", actions: [] });
@@ -28,14 +40,61 @@ export async function render(host) {
     return;
   }
   host.replaceChildren();
-  host.appendChild(lookCard());
-  host.appendChild(llmCard());
-  host.appendChild(ttsCard());
-  host.appendChild(imagesCard());
-  host.appendChild(studyCard());
-  host.appendChild(pronounceCard());
-  host.appendChild(selfcheckCard());
-  host.appendChild(dataCard());
+  // 八张卡一路到底太长，顶上给一排能跳的锚点。
+  // 这几张卡的顺序是按「多久才会改一次」排的，不是按重要性 —— 所以需要能跳。
+  host.appendChild(sectionNav());
+  const cards = [
+    lookCard(),
+    llmCard(),
+    ttsCard(),
+    imagesCard(),
+    studyCard(),
+    pronounceCard(),
+    selfcheckCard(),
+    dataCard(),
+  ];
+  cards.forEach((node, index) => {
+    node.id = `set-${SECTION_IDS[index]}`;
+  });
+  host.append(...cards);
+}
+
+function sectionNav() {
+  const bar = el("div", { class: "settings-nav" });
+  const buttons = new Map();
+  for (const id of SECTION_IDS) {
+    const button = el("button", { class: "chip pick", type: "button", text: SECTION_LABEL[id] });
+    button.addEventListener("click", () => {
+      const target = document.getElementById(`set-${id}`);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    buttons.set(id, button);
+    bar.appendChild(button);
+  }
+
+  // 滚到哪一张就把哪一颗点亮 —— 光有跳转不够，回来时不知道自己在第几节。
+  if (typeof IntersectionObserver === "function") {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const id = entry.target.id.replace(/^set-/, "");
+          for (const [key, button] of buttons) {
+            button.classList.toggle("is-here", key === id);
+          }
+        }
+      },
+      { rootMargin: "-15% 0px -70% 0px", threshold: 0 },
+    );
+    // 卡片是同步插进 DOM 的，等一帧再观察，否则拿到的是还没挂上去的节点。
+    requestAnimationFrame(() => {
+      for (const id of SECTION_IDS) {
+        const node = document.getElementById(`set-${id}`);
+        if (node) observer.observe(node);
+      }
+    });
+  }
+  return bar;
 }
 
 async function ensure(force = false) {
@@ -101,12 +160,22 @@ function saveButton(onClick, label = "保存") {
 
 async function savePatch(patch, button, message) {
   if (button) button.disabled = true;
+  const label = button ? button.textContent : "";
   try {
     const res = await post("/api/config", patch);
     state.config = res.config || state.config;
     if (message) {
       message.textContent = "存好了。";
       message.className = "hint ok";
+    }
+    // 按钮自己也要说话：点了之后顶部没变化时，人只会以为没点上。
+    if (button) {
+      button.textContent = "已保存";
+      button.classList.add("is-saved");
+      setTimeout(() => {
+        button.textContent = label;
+        button.classList.remove("is-saved");
+      }, 1400);
     }
     toast("存好了。", "ok");
     if (patch.channels || patch.study) state.stats = null;
@@ -230,9 +299,13 @@ function llmCard() {
     field("接口地址", base, "要以 /v1 结尾。Ollama 之类本机服务也填在这里。"),
     field("模型名", model),
     field("key", key, "只存在本机，接口永远不会把它原样返回。"),
-    el("div", { class: "grid2" }, [
-      field("温度", temperature, "越高越会换着说法写例句。"),
-      field("超时（秒）", timeout),
+    // 温度和超时是「填错了也能用」的那类，收起来不占视线。
+    el("details", { class: "adv" }, [
+      el("summary", { text: "高级：温度、超时" }),
+      el("div", { class: "grid2" }, [
+        field("温度", temperature, "越高越会换着说法写例句。"),
+        field("超时（秒）", timeout, "网络慢就往大调，默认 120。"),
+      ]),
     ]),
     el("div", { class: "row" }, [save, test, message]),
   );
@@ -700,6 +773,7 @@ function dataCard() {
       const res = await post("/api/backup", {});
       message.className = "hint ok";
       message.textContent = `备份好了：${res.path}（${humanSize(res.bytes)}）`;
+      await loadBackups();
     } catch (err) {
       message.className = "hint bad";
       message.textContent = err.message;
@@ -708,6 +782,84 @@ function dataCard() {
     }
   });
 
-  box.append(host, field("搬到别处", path), el("div", { class: "row" }, [move, backup, message]));
+  // 备份列表 + 恢复。恢复是会覆盖当前库的操作，所以按钮是 ghost，确认框里写清后果。
+  const backupsHost = el("div", { class: "backups" });
+
+  async function loadBackups() {
+    try {
+      const data = await get("/api/backups");
+      const list = data.backups || [];
+      backupsHost.replaceChildren();
+      if (!list.length) {
+        backupsHost.append(el("div", { class: "hint", text: "还没有备份。备份是 sqlite 的一整份快照，几 MB。" }));
+        return;
+      }
+      backupsHost.append(sectionHead(`已有的备份（${list.length} 个）`));
+      for (const item of list) {
+        const restore = el("button", { class: "btn ghost sm", type: "button", text: "恢复这一份" });
+        restore.addEventListener("click", async () => {
+          if (
+            !window.confirm(
+              `用「${item.name}」覆盖现在的数据？\n\n现在的库会先自动备份一份（before-restore-…），但训练进度会回到这份备份的时间点。`,
+            )
+          ) {
+            return;
+          }
+          restore.disabled = true;
+          try {
+            await post("/api/backups/restore", { name: item.name });
+            // 恢复之后**整页重载**：后端已经换了库，界面里那一堆缓存（统计、
+            // 训练队列、进度）全是旧数据。让用户自己去刷新一次，多半就是
+            // 「看着恢复了、点进去还是旧的」。
+            toast("恢复好了，正在重新载入…", "ok");
+            window.setTimeout(() => window.location.reload(), 700);
+          } catch (err) {
+            toast(err.message || "恢复失败。", "bad");
+          } finally {
+            restore.disabled = false;
+          }
+        });
+        backupsHost.append(
+          el("div", { class: "backup-row" }, [
+            el("span", { class: "mono backup-name", text: item.name }),
+            el("span", { class: "hint", text: `${humanSize(item.bytes)} · ${humanWhen(item.at)}` }),
+            el("span", { class: "grow" }),
+            restore,
+          ]),
+        );
+      }
+    } catch (err) {
+      backupsHost.replaceChildren(el("div", { class: "hint bad", text: err.message }));
+    }
+  }
+
+  const openers = el("div", { class: "row wrap" });
+  for (const [which, label] of [
+    ["data", "打开数据目录"],
+    ["logs", "打开日志"],
+    ["recordings", "打开录音"],
+    ["backups", "打开备份"],
+  ]) {
+    const button = el("button", { class: "btn ghost sm", type: "button", text: label });
+    button.addEventListener("click", async () => {
+      try {
+        const res = await post("/api/open-folder", { which });
+        toast(`打开了：${res.path}`, "ok");
+      } catch (err) {
+        toast(err.message || "打不开。", "bad");
+      }
+    });
+    openers.append(button);
+  }
+
+  loadBackups();
+
+  box.append(
+    host,
+    openers,
+    field("搬到别处", path),
+    el("div", { class: "row" }, [move, backup, message]),
+    backupsHost,
+  );
   return box;
 }

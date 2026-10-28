@@ -56,6 +56,8 @@ export function toast(text, level = "ok", ms = 3200) {
   if (!host) return;
   const node = el("div", { class: `toast ${level}`, text });
   host.appendChild(node);
+  // 最多堆三条：连点几下保存时，一长串提示会把右下角糊住。
+  while (host.children.length > 3) host.firstElementChild.remove();
   window.setTimeout(() => {
     node.style.opacity = "0";
     window.setTimeout(() => node.remove(), 220);

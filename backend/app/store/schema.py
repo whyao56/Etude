@@ -291,6 +291,39 @@ def backup_to(dest: Path) -> Path:
     return dest
 
 
+def auto_backup(days: int = 7, keep: int = 6) -> str:
+    """定期备份：距上一份超过 ``days`` 天就再做一份，并把多余的老备份删掉。
+
+    只在启动时调用一次。用户不会主动备份 —— 而 SRS 的复习记录一旦丢了，
+    是「练了三个月的东西没了」，不是「重装一下」。所以这件事得软件自己记得。
+    返回这次做的备份文件名；没做返回空串。
+    """
+    import time
+
+    from ..paths import backups_dir
+
+    folder = backups_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    existing = sorted(
+        (p for p in folder.glob("etude-*.sqlite3") if p.is_file()),
+        key=lambda p: p.stat().st_mtime,
+    )
+    if existing:
+        newest = existing[-1].stat().st_mtime
+        if time.time() - newest < days * 86400:
+            return ""
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    name = f"etude-{stamp}.sqlite3"
+    backup_to(folder / name)
+    # 只留最近 keep 份：备份不该变成磁盘占用的主要来源。
+    for old in existing[: max(0, len(existing) - (keep - 1))]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    return name
+
+
 def _loads(value: Any, fallback: Any) -> Any:
     if isinstance(value, (list, dict)):
         return value

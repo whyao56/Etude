@@ -61,6 +61,7 @@ from .plans import (
 from .readiness import images_expected, readiness, stats
 from .schema import (
     CHANNELS,
+    auto_backup,
     backup_to,
     close,
     connect,
@@ -76,6 +77,7 @@ __all__ = [
     "add_example",
     "attempt_summary",
     "attempts_in_repository",
+    "auto_backup",
     "backup_to",
     "card_payload",
     "close",

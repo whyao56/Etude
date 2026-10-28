@@ -65,20 +65,22 @@ etude/
 │   │   ├── routes/             HTTP 接口，按资源切（0.1.0 拆）
 │   │   │   ├── meta.py         health / selfcheck / 静态资源 / 首页
 │   │   │   ├── config.py       配置、预置、连接测试、catalog
-│   │   │   ├── lessons.py      训练包增删改、例句、补语音补图
+│   │   │   ├── lessons.py      训练包增删改、例句、补语音补图、导出导入
 │   │   │   ├── batch.py        批量建包 + 主题起草
 │   │   │   ├── plans.py        学习计划与大纲
 │   │   │   ├── cards.py        队列、评分、撤销、卡片浏览器
 │   │   │   ├── pronounce.py    跟读上传、评分历史、录音回放
-│   │   │   ├── data.py         数据位置搬迁、备份
+│   │   │   ├── progress.py     进度页的数据（0.1.1）
+│   │   │   ├── data.py         数据位置搬迁、备份/恢复、打开目录
 │   │   │   ├── media.py        音频与图片回放
 │   │   │   └── _jobs.py        线程池转发（函数内懒导入，避免循环）
 │   │   ├── store/              SQLite，按谁改谁切（0.1.0 拆）
-│   │   │   ├── schema.py       ★ 连接、SCHEMA、迁移、通用查询
+│   │   │   ├── schema.py       ★ 连接、SCHEMA、迁移、通用查询、自动备份
 │   │   │   ├── lessons.py      训练包与例句读写
 │   │   │   ├── cards.py        复习调度、评分、撤销
 │   │   │   ├── plans.py        学习计划
 │   │   │   ├── readiness.py    完整度与统计
+│   │   │   ├── progress.py     14 天序列 / 连击 / 弱点卡（0.1.1）
 │   │   │   └── attempts.py     跟读尝试
 │   │   ├── db.py               门面：`from .store import *`（保持既有调用不变）
 │   │   ├── server.py           端口选择 + 优雅停止
@@ -88,17 +90,19 @@ etude/
 │   │   ├── index.html          只有壳和一句 <script type="module">
 │   │   ├── css/                tokens / base / layout / components / views
 │   │   └── js/
-│   │       ├── main.js         装配：路由、侧栏、横幅、全局错误
+│   │       ├── main.js         装配：路由、侧栏、横幅、全局错误、快捷键
 │   │       ├── version.js      ★ APP_VERSION（必须与 app/__init__.py 一致）
 │   │       ├── core/           dom / api / store / router / ui / audio / wav / recorder
-│   │       └── views/          study / lessons / lesson / plans / cards / settings / pronounce
-│   └── tests/                  316 项测试
+│   │       └── views/          study / progress / lessons / lesson / plans / cards
+│   │                           / settings / pronounce / about
+│   └── tests/                  331 项测试
 ├── scripts/
 │   ├── build_exe.py            打包编排
 │   ├── make_release.py         发版
 │   ├── e2e_check.py            对打包版打真实 HTTP
 │   ├── ui_smoke.js             真浏览器点一遍
 │   ├── screenshots.js          出文档截图（自己起服务 + 全新临时数据目录）
+│   ├── seed_demo.py            造「练了三周」的演示数据（截图与验收用）
 │   ├── openai_stub.py          本地假模型
 │   ├── products.py             ★ 打包产物在哪（三个脚本共用的判断）
 │   ├── cdp.js                  自写 CDP 客户端
@@ -422,6 +426,43 @@ finally:
   不是统一的 `both-`。否则用户从「并行」切到「只用检索」时会重新下载同一张图 ——
   缓存和单源模式对不上。
 
+### 4.13 备份只能走 `VACUUM INTO`，恢复必须先删 WAL
+
+```python
+# backend/app/store/schema.py
+connect().execute(f"VACUUM INTO '{safe}'")     # 备份
+
+# backend/app/routes/data.py
+db.close()
+for suffix in ("-wal", "-shm"):                # 恢复
+    (target.parent / (target.name + suffix)).unlink(missing_ok=True)
+shutil.copyfile(source, target)
+```
+
+两件事看起来都是「复制文件」，其实都不是：
+
+- **备份**：库开着 WAL 时，主文件里可能缺着还没 checkpoint 的写。
+  `shutil.copy` 出来的文件打开后不报错、内容却是旧的 —— 典型「不报错但结果不对」。
+- **恢复**：不删 `-wal` / `-shm` 的话，SQLite 下次打开会把**旧日志**重放到
+  **新主文件**上，得到一个一半新一半旧的库。这个坑只在「恢复之后接着用」时才暴露。
+
+恢复前还会先把当前的库备份成 `before-restore-*.sqlite3` —— 恢复是个不可撤销的动作，
+它自己也得能后悔。前端那边恢复完**整页重载**：后端换了库，界面里的统计、
+队列、进度全是旧数据，让用户自己刷新一次多半就是「看着恢复了、其实还是旧的」。
+
+### 4.14 导出文件里不放二进制
+
+`GET /api/lessons/{id}/export` 只带文字：目标、释义、音标、例句、场景、中文说法、换词。
+语音和配图留在本地目录里。
+
+一份 8 条例句的包，文字是几十 KB，mp3 + 图是十几 MB。把二进制塞进 JSON 会让
+这个文件既不能手改、也不能进版本库，还得处理「文件名冲突了怎么办」。
+需要整包搬家的人有更好的办法：搬数据目录（设置里就有）。
+
+导入端对应的规则是**清洗而不是信任**：句子必填、按小写去重（重复句会变成
+两张一模一样的卡，训练时连着出现三次，看着像程序坏了）、最多 40 条、
+中文说法最多 4 种；落成「缺语音」状态，用详情页的一键补齐恢复。
+
 ---
 
 ## 五、HTTP 接口
@@ -471,6 +512,12 @@ finally:
 | GET | `/api/pronounce` | 跟读功能现在能测什么（要不要转写服务，0.1.0） |
 | POST | `/api/pronounce/check` | 真跑一遍转写链路（0.1.0） |
 | GET | `/api/stats` | 统计（含 `suspended`） |
+| GET | `/api/progress?days=14` | 进度页要的全部数字：14 天序列、连击、五通道、弱点卡、跟读汇总（0.1.1） |
+| GET | `/api/lessons/{id}/export` | 导出成一份 JSON（只有文字，不带语音和图，0.1.1） |
+| POST | `/api/lessons/import` | 把导出的 JSON 变回训练包（清洗 + 去重，落成「缺语音」，0.1.1） |
+| GET | `/api/backups` | 列备份 + 当前库存量（0.1.1） |
+| POST | `/api/backups/restore` | 用备份覆盖当前库；**恢复前先自动备份**（0.1.1） |
+| POST | `/api/open-folder` | 在文件管理器里打开 data/logs/recordings/backups 之一（0.1.1） |
 | POST | `/api/backup` | 备份（`VACUUM INTO`） |
 | GET | `/` | 界面 HTML，`no-store` |
 | GET | `/static/{path}` | 前端模块与样式。**同样 `no-store`**，见下 |
@@ -540,7 +587,7 @@ RELEARN_MINUTES = 10.0
 ## 七、前端
 
 `backend/frontend/`：原生 ES 模块 + 分包 CSS，**零构建、零 CDN**。
-0.1.0 之前它是一个 4,500 行的 `index.html`；现在拆成 17 个模块，
+0.1.0 之前它是一个 4,500 行的 `index.html`；现在拆成 19 个模块，
 `index.html` 只剩壳和一句 `<script type="module" src="/static/js/main.js">`。
 
 ```
@@ -548,10 +595,11 @@ frontend/
 ├── index.html        壳：侧栏、顶栏、#app、#toasts、#overlay-host
 ├── css/              tokens（配色与尺寸）→ base（重置）→ layout → components → views
 └── js/
-    ├── main.js       装配：路由分发、侧栏、横幅、全局错误
+    ├── main.js       装配：路由分发、侧栏、横幅、全局错误、快捷键
     ├── version.js    APP_VERSION（必须与后端 __version__ 一致）
     ├── core/         dom / api / store / router / ui / audio / wav / recorder
-    └── views/        study / lessons / lesson / plans / cards / settings / pronounce
+    └── views/        study / progress / lessons / lesson / plans / cards / settings
+                      / pronounce / about
 ```
 
 （这份文档里凡是写死行数的地方都容易过时 —— 行数是**结论**，
@@ -563,10 +611,12 @@ frontend/
 | 原生 ES 模块，不上打包器 | 拆文件是为了能改；一旦引入构建步骤，「双击就能调界面」这条就没了 |
 | 不用框架 | 没有编译步骤 = 改完刷新就能看。代价是失去编译期检查，用 `check_frontend.py` 补 |
 | 不用 `innerHTML` 拼字符串 | 例句里有用户输入的目标词，拼字符串就是 XSS 入口。全部走 `el(tag, attrs, children)` 建 DOM |
-| hash 路由 | `#/study`、`#/lessons/<id>`、`#/plans/<id>`、`#/settings`。刷新不 404，不需要服务端配合 |
+| hash 路由 | `#/study`、`#/lessons/<id>`、`#/plans/<id>`、`#/progress`、`#/settings`。刷新不 404，不需要服务端配合 |
 | 每包独立轮询 | `pollTimers = new Map()`，键是 lesson_id。共享一个定时器的话，同时生成多个包只有最后一个会被轮询 |
 | 录音用 WebAudio 自己编 WAV | `MediaRecorder` 给的是 webm/opus，后端解不了；为了它塞一个 ffmpeg 不值得 |
 | 评分区 `position: sticky` | 翻面之后内容变高，评分键会被挤到视口外（实测 882 高的窗口里在 y=937）。键盘能按、鼠标点不到 |
+| 进度页的时间桶按**本机时区**切 | 库里 `at` 是 UTC。按 UTC 切日，晚上八点之后练的卡会掉进第二天，「连续天数」在深夜莫名断掉 |
+| 换配色 / 改字号后**不整页重载** | `applyLook()` 只改 `<html>` 上的 data 属性，CSS 变量自己会跟着变 |
 
 **`el()` 的 attrs 分三类**：`on*` 走 `addEventListener`（**转小写**）、
 `className`/`textContent` 直接赋值、其余走 `setAttribute`。
@@ -575,6 +625,12 @@ frontend/
 （导入 / 图标 / 类名 / 版本四项），再 `node scripts/ui_smoke.js`
 （真鼠标点一遍），最后才看截图。类名对不上不会报错 ——
 页面只是看起来「没做完」，这条守卫就是为它写的。
+
+**截图脚本的两个坑**（都在 `scripts/screenshots.js` 里写了注释）：
+改 `localStorage` 之后**立刻** `navigate` 在无头 Chrome 里会丢这次写；
+只改 hash 又不会重跑 `boot()->applyLook()`。所以换配色要么点按钮、
+要么写完 `reload()` —— 以前不知道这两条，拍出来的「深色」和「浅色」
+其实是同一张图。
 
 **全局错误兜底**：`window.addEventListener("error"/"unhandledrejection")`
 把异常摆到页面顶部的 banner 上。没有这个的话，JS 出错只会让界面

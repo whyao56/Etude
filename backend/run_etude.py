@@ -82,6 +82,15 @@ def main(argv: list[str] | None = None) -> int:
     if recovered:
         print(f"清理了 {recovered} 个上次没跑完的生成任务。")
 
+    # 定期备份。用户不会自己备份，而复习记录丢了是「练了三个月没了」。
+    # 失败只记一行日志 —— 备份不成功不该拦着人开始练。
+    try:
+        made = db.auto_backup()
+        if made:
+            print(f"自动备份：backups/{made}")
+    except Exception as exc:  # noqa: BLE001 - 备份失败不能拦启动
+        print(f"自动备份没做成：{exc}")
+
     preferred = args.port or DEFAULT_PORT
     try:
         port, already = choose_port(preferred)

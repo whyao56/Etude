@@ -7,4 +7,4 @@
  *   2. scripts/build_exe.py 的 preflight（读 app/__init__.py 的 __version__ 对比）
  *   3. scripts/make_release.py 的 assert_dist_version
  */
-export const APP_VERSION = "0.1.0";
+export const APP_VERSION = "0.1.1";

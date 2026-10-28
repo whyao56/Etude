@@ -14,10 +14,11 @@
  * 也兼容老的 `#lessons` 写法（旧书签、旧代码里的 location.hash 不会 404）。
  */
 
-export const VIEWS = ["study", "lessons", "plans", "cards", "settings"];
+export const VIEWS = ["study", "progress", "lessons", "plans", "cards", "settings"];
 
 export const VIEW_META = {
   study: { title: "训练", sub: "一次一张卡，翻面之后给自己打分" },
+  progress: { title: "进度", sub: "练了多少、连着多少天、哪几张最该回头看" },
   lessons: { title: "训练包", sub: "一个词 / 一句话，配 8 条不同场景的例句" },
   plans: { title: "目标", sub: "说清要干什么，让模型排出该学什么" },
   cards: { title: "卡片", sub: "所有卡都在这里，可以筛选、批量暂停、推后" },

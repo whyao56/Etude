@@ -104,6 +104,18 @@ class BackupIn(BaseModel):
     name: str = ""
 
 
+class RestoreIn(BaseModel):
+    """从备份恢复。名字必须和 backups 目录里的文件名一字不差。"""
+
+    name: str = Field(min_length=1, max_length=200)
+
+
+class OpenFolderIn(BaseModel):
+    """只认 data / logs / recordings / backups 四个名字，不接受路径。"""
+
+    which: str = "data"
+
+
 class PlanIn(BaseModel):
     language: str = "en"
     goal_kind: str = "fluency"

@@ -82,6 +82,30 @@ export async function render(host) {
   host.appendChild(graderBlock());
   host.appendChild(footerBlock());
   paintIcons(host);
+  maybeAutoplay();
+}
+
+/* 听力卡进到这一张就自动放一遍。
+ * 以前要用户自己点那个大播放键 —— 听力练习的第一步不应该是「找播放键」。
+ * 一张卡只自动放一次：翻面后重画不会又响一遍。 */
+function maybeAutoplay() {
+  const card = state.current && state.current.card;
+  const example = state.current && state.current.example;
+  if (!card || card.channel !== "listen" || !example) return;
+  if (state.autoPlayedFor === card.id) return;
+  state.autoPlayedFor = card.id;
+  const button = document.querySelector("#app .listen-row .play");
+  if (button) button.click();
+}
+
+/** R 键 / 侧栏提示用：把这句再放一遍。 */
+export function replay() {
+  const button = document.querySelector("#app .listen-row .play, #app .stage .play");
+  if (button) {
+    button.click();
+    return true;
+  }
+  return false;
 }
 
 /* ------------------------------------------------------------------ 取卡 */
@@ -143,8 +167,8 @@ function stage() {
       el("div", { class: "listen-row" }, [
         playButton(example, { big: true }),
         el("div", { class: "col" }, [
-          el("div", { class: "task", text: "只听声音。不要看字，也不要先想中文。" }),
-          el("div", { class: "hint", text: CHANNEL_TIPS.listen }),
+          el("div", { class: "task", text: "只听声音。想不起来就按空格翻面。" }),
+          el("div", { class: "hint", text: "进到卡片时自动放一遍；想再听按 R。" }),
         ]),
       ]),
     );
@@ -272,8 +296,14 @@ function typingBlock() {
     autocapitalize: "off",
     spellcheck: "false",
   });
-  const button = el("button", { class: "btn primary", type: "button", text: "对比" });
+  const button = el("button", { class: "btn primary sm", type: "button", text: "对比" });
   const host = el("div", { class: "diff-host" });
+  // 没打字时按钮是灰的：一个通栏的蓝色按钮摆在空输入框下面，
+  // 看着像「这一步做完了」，点下去却什么都不会发生。
+  button.disabled = true;
+  input.addEventListener("input", () => {
+    button.disabled = !input.value.trim();
+  });
   const run = () => {
     const typed = input.value.trim();
     if (!typed) {
@@ -413,6 +443,20 @@ function answerBlock() {
 function graderBlock() {
   const preview = state.current.srs_preview || {};
   const grid = el("div", { class: "grader" });
+  const DEFAULT_HINT = "翻面之后按 1–4 打分；把鼠标放到某一档上，会告诉你那一档的意思。";
+  const hint = el("div", { class: "hint grader-hint", text: DEFAULT_HINT });
+  const showHint = (index) => {
+    if (index < 0) {
+      hint.textContent = DEFAULT_HINT;
+      return;
+    }
+    const info = preview[index] || {};
+    // 以前这里直接把 GRADE_HINT 这个数组塞进 textContent ——
+    // 四档的解释被拼成一整行，看着像界面坏了。
+    hint.textContent = `${GRADE_LABEL[index]}：${GRADE_HINT[index]}${
+      info.human ? `（下次 ${info.human}）` : ""
+    }`;
+  };
   for (let g = 0; g < 4; g += 1) {
     const info = preview[g] || {};
     const pending = !state.revealed && g !== 0;
@@ -431,12 +475,13 @@ function graderBlock() {
       ],
     );
     button.addEventListener("click", () => grade(g));
+    button.addEventListener("pointerenter", () => showHint(g));
+    button.addEventListener("pointerleave", () => showHint(-1));
+    button.addEventListener("focus", () => showHint(g));
+    button.addEventListener("blur", () => showHint(-1));
     grid.appendChild(button);
   }
-  return el("section", { class: "grader-wrap" }, [
-    grid,
-    el("div", { class: "hint", text: GRADE_HINT }),
-  ]);
+  return el("section", { class: "grader-wrap" }, [grid, hint]);
 }
 
 function footerBlock() {
@@ -582,23 +627,29 @@ function sessionDone() {
   const due = Number(stats.due_now || 0);
   const fresh = Number(stats.introduced || 0);
   const total = Number(stats.cards || 0);
-  const title = total === 0 ? "还没有卡片" : "今天这一批练完了";
+
+  if (total === 0) {
+    // 第一次打开的人看到的是「还没有卡片」——这句话本身没错，但没告诉他下一步做什么。
+    // 这里直接把三件事排成一条路：填模型 → 建包 → 开练。
+    box.appendChild(guideBlock());
+    return box;
+  }
+
+  const title = "今天这一批练完了";
   const text =
-    total === 0
-      ? "先去「训练包」建一个词，生成之后卡片会自己出现在这里。"
-      : due > 0
-        ? `还有 ${due} 张今天到期。再开一批继续。`
-        : `到期都清了。现在一共 ${total} 张卡，学过 ${fresh} 张。`;
+    due > 0
+      ? `还有 ${due} 张今天到期。再开一批继续。`
+      : `到期都清了。现在一共 ${total} 张卡，学过 ${fresh} 张。`;
   box.appendChild(
     emptyBlock({
-      art: total === 0 ? "spark" : "check",
+      art: "check",
       title,
       text,
       actions: [
         el("button", {
           class: "btn primary",
           type: "button",
-          text: total === 0 ? "去建训练包" : "再来一批",
+          text: "再来一批",
           onClick: async () => {
             await loadQueue();
             const app = document.getElementById("app");
@@ -634,6 +685,70 @@ function sessionDone() {
   return box;
 }
 
+/** 首启引导：三步走完就能开始练，每一步都直接给按钮。 */
+function guideBlock() {
+  const config = state.config || {};
+  const llm = config.llm || {};
+  const stats = state.stats || {};
+  const steps = [
+    {
+      title: "先接一个大模型",
+      hint: "例句、场景、中文说法都是模型生成的。填个地址和 key 就能用。",
+      done: Boolean(llm.base_url && llm.api_key_set),
+      action: "去设置",
+      go: () => {
+        location.hash = "#/settings";
+      },
+    },
+    {
+      title: "建第一个训练包",
+      hint: "输入一个词或一句话，八条例句、四十张卡就都有了。",
+      done: Number(stats.lessons || 0) > 0,
+      action: "去建包",
+      go: () => {
+        location.hash = "#/lessons";
+      },
+    },
+    {
+      title: "开始练",
+      hint: "阅读、听力、口语、打字、造句分开练，隔几天再回来复习。",
+      done: Number(stats.introduced || 0) > 0,
+      action: "开始训练",
+      go: () => {
+        loadQueue().then(() => {
+          const app = document.getElementById("app");
+          if (app) render(app);
+        });
+      },
+    },
+  ];
+  const rows = steps.map((step, index) => {
+    const button = el("button", {
+      class: step.done ? "btn sm ghost" : "btn sm primary",
+      type: "button",
+      text: step.done ? "已完成" : step.action,
+    });
+    button.disabled = step.done;
+    button.addEventListener("click", step.go);
+    return el("div", { class: `guide-step${step.done ? " is-done" : ""}` }, [
+      el("div", { class: "guide-num", text: step.done ? "✓" : String(index + 1) }),
+      el("div", { class: "guide-body" }, [
+        el("b", { text: step.title }),
+        el("div", { class: "hint", text: step.hint }),
+      ]),
+      button,
+    ]);
+  });
+  return el("section", { class: "card" }, [
+    el("h3", { text: "三步就能开始" }),
+    el("p", {
+      class: "card-note",
+      text: "这一步的活都在这台机器上做完了再说话 —— 不需要注册，也不上传任何东西。",
+    }),
+    el("div", { class: "guide" }, rows),
+  ]);
+}
+
 /* ------------------------------------------------------------------ 键盘 */
 
 export function handleKey(event) {
@@ -665,6 +780,11 @@ export function handleKey(event) {
     undoLast();
     return true;
   }
+  if (event.key === "r" || event.key === "R") {
+    event.preventDefault();
+    if (!replay()) toast("这张卡没有语音文件。", "warn");
+    return true;
+  }
   return false;
 }
 
@@ -673,18 +793,29 @@ export function sideBlock() {
   const box = el("div", { class: "side-session" });
   const done = state.session.done || 0;
   const left = Math.max(0, state.queue.length - state.cursor);
+  const channel = state.current && state.current.card ? state.current.card.channel : "";
   box.appendChild(
     el("div", { class: "tally" }, [
       el("b", { text: String(done) }),
       el("span", { text: `本次已练 · 还剩 ${left}` }),
     ]),
   );
+  if (channel) {
+    box.appendChild(
+      el("div", { class: "side-chan" }, [
+        el("span", { class: `chan ${channel}`, text: CHANNEL_LABEL[channel] || channel }),
+        el("span", { class: "hint", text: CHANNEL_TIPS[channel] || "" }),
+      ]),
+    );
+  }
   box.appendChild(
     el("div", { class: "hotkeys" }, [
       el("div", {}, [kbd("空格"), el("span", { text: "看答案 / 收起" })]),
       el("div", {}, [kbd("1–4"), el("span", { text: GRADE_LABEL.join(" / ") })]),
       el("div", {}, [kbd("← →"), el("span", { text: "上一张 / 跳过" })]),
       el("div", {}, [kbd("Z"), el("span", { text: "撤销上一次评分" })]),
+      el("div", {}, [kbd("R"), el("span", { text: "再听一遍" })]),
+      el("div", {}, [kbd("?"), el("span", { text: "全部快捷键" })]),
     ]),
   );
   return box;

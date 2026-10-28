@@ -322,10 +322,14 @@ function outlineCard(host, plan) {
     return box;
   }
 
+  // 全部生成完之后还写「开始生成」会让人以为还有没做的 —— 按进度改文案。
+  const doneCount = Number((plan.progress || {}).ready || 0);
+  const totalCount = Number((plan.progress || {}).total || 0);
+  const allDone = totalCount > 0 && doneCount >= totalCount;
   const start = el("button", {
-    class: "btn primary",
+    class: allDone ? "btn ghost" : "btn primary",
     type: "button",
-    text: `开始生成（${chosen.size} 个）`,
+    text: allDone ? `全部生成完了（${totalCount} 个）` : `开始生成（${chosen.size} 个）`,
   });
   start.addEventListener("click", async () => {
     const keep = outline.filter((item) => chosen.has(item.target));

@@ -194,18 +194,28 @@
 
 /* 打字通道：输入框 + 逐词对比 */
 .typerow {
-  display: flex;
-  flex-direction: column;
+  /* 输入框和「对比」在同一行：按钮通栏铺满一行会显得像页面底部的主按钮，
+     而它其实只是「这一步做完了」。对比结果自己占满下一行。 */
+  display: grid;
+  grid-template-columns: 1fr auto;
   gap: 10px;
+  align-items: center;
 }
 
 .typerow input {
+  grid-column: 1;
   font-family: var(--serif);
   font-size: calc(var(--stage-fs) * 0.62);
   padding: 12px 14px;
 }
 
+.typerow .btn {
+  grid-column: 2;
+  white-space: nowrap;
+}
+
 .diff-host {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -368,6 +378,20 @@
   font-size: 0.78em;
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
+}
+
+/* 评分键下面那行提示。默认是一句怎么打分，鼠标移到某一档上会换成那一档的解释 ——
+   它必须和四个按钮贴在一起，否则用户会以为那是页脚文案。 */
+.grader-hint {
+  margin-top: 9px;
+  min-height: 1.6em;
+  font-size: 0.82em;
+  color: var(--ink-3);
+  transition: color 0.15s ease;
+}
+
+.grader-hint.is-live {
+  color: var(--ink-2);
 }
 
 .grade.g0 {
@@ -552,6 +576,32 @@
   border: 1px solid var(--line);
 }
 
+/* 分数旁边那句判断（很稳 / 能用 / 再念一遍）。它比数字显眼是故意的：
+   数字容易让人盯着 87 还是 89，一句结论才是他想知道的。 */
+.chip.verdict {
+  font-size: 0.82em;
+  font-weight: 600;
+  padding: 3px 10px;
+}
+
+.chip.verdict.ok {
+  background: var(--ok-soft, var(--accent-soft));
+  color: var(--ok);
+  border-color: transparent;
+}
+
+.chip.verdict.warn {
+  background: var(--surface-3);
+  color: var(--warn);
+  border-color: transparent;
+}
+
+.chip.verdict.bad {
+  background: var(--surface-3);
+  color: var(--bad);
+  border-color: transparent;
+}
+
 .items {
   display: flex;
   flex-direction: column;
@@ -617,6 +667,45 @@
   font-family: var(--mono);
 }
 
+/* 逐词对照：绿=对上，红=漏了 */
+.words {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.words .lab {
+  font-size: 0.78em;
+  color: var(--ink-3);
+}
+
+.word-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.word-row .w {
+  font-family: var(--mono);
+  font-size: 0.84em;
+  padding: 2px 7px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.word-row .w.hit {
+  background: var(--ok-soft);
+  border-color: transparent;
+  color: var(--ok);
+}
+
+.word-row .w.miss {
+  background: var(--bad-soft);
+  border-color: transparent;
+  color: var(--bad);
+}
+
 .advice {
   font-size: 0.86em;
   color: var(--ink-2);
@@ -636,6 +725,12 @@
 
 .builder .row {
   align-items: center;
+}
+
+/* 导入按钮后面那个藏起来的 file input —— 外壳只负责排版，不要占位。 */
+.import-wrap {
+  display: inline-flex;
+  flex: 0 0 auto;
 }
 
 #target-input {
@@ -697,6 +792,11 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* 还没起草时它是个空壳子；空着就别画那个圆角框。 */
+.draft:empty {
+  display: none;
 }
 
 .draft-head {
@@ -839,6 +939,11 @@
   gap: 14px;
   padding: 14px 0;
   border-top: 1px solid var(--line);
+}
+
+/* 没开配图时没有左边那一列，让文字占满整行 */
+.example-row.no-media {
+  grid-template-columns: 1fr;
 }
 
 .example-row:first-of-type {
@@ -1042,11 +1147,142 @@
 
 .browser .bulkbar {
   display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 一张都没勾的时候，批量条只是句提示，别让它顶着强调色底闪。
+   底和边一起来自 components.css 的 .bulkbar，这里只针对「未激活」削掉。 */
+.browser .bulkbar:not(.is-active) {
+  padding: 0;
+  border-color: transparent;
+  background: none;
+}
+
+.browser .bulkbar .bulk-count {
+  font-size: 0.78em;
+  color: var(--ink-3);
+}
+
+.browser .bulkbar .bulk-actions {
+  display: none;
   gap: 6px;
   flex-wrap: wrap;
 }
 
+.browser .bulkbar.is-active {
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+}
+
+.browser .bulkbar.is-active .bulk-count {
+  color: var(--accent-2);
+}
+
+.browser .bulkbar.is-active .bulk-actions {
+  display: flex;
+}
+
 /* ================================================================== 设置 */
+
+.settings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  padding: 6px 0 12px;
+  background: linear-gradient(var(--bg) 70%, transparent);
+}
+
+.settings-nav .chip {
+  height: 26px;
+  font-size: 0.8em;
+}
+
+.settings-nav .chip.is-here {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* 设置页一张卡里挤着好几个字段，全靠这点间距分开。 */
+section.card > .field {
+  margin-top: 12px;
+}
+
+section.card > .grid2 {
+  margin-top: 12px;
+}
+
+.btn.is-saved {
+  background: var(--ok);
+  border-color: transparent;
+  color: #fff;
+}
+
+.adv {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.adv > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 0.82em;
+  color: var(--ink-3);
+  list-style: none;
+}
+
+.adv > summary::-webkit-details-marker {
+  display: none;
+}
+
+.adv > summary::before {
+  content: "+";
+  font-family: var(--mono);
+  color: var(--accent);
+}
+
+.adv[open] > summary::before {
+  content: "−";
+}
+
+.adv > summary:hover {
+  color: var(--accent);
+}
+
+.backups {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.backup-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 0.84em;
+}
+
+.backup-row .backup-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 22em;
+}
 
 .selfcheck {
   width: 100%;
@@ -1135,9 +1371,27 @@
   gap: 8px;
 }
 
+/* 侧栏里「这张卡在练什么」的一句话 —— 提示放在侧栏，
+   主区就不再重复一遍（以前听力卡上同一句话出现过两次）。 */
+.side-chan {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.side-chan .hint {
+  font-size: 0.72em;
+  line-height: 1.45;
+}
+
 /* 侧栏收起后，只留下图标那一列 */
 html[data-side="collapsed"] .side-session .hotkeys,
 html[data-side="collapsed"] .side-session .tally span,
+html[data-side="collapsed"] .side-session .side-chan,
 html[data-side="collapsed"] .side-card .hint {
   display: none;
 }
@@ -1224,4 +1478,510 @@ th.pick {
 .own audio {
   width: 100%;
   height: 32px;
+}
+
+/* ================================================================== 进度页 */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+/* 有情绪的三档：今天练过、连着好几天、欠着没练 */
+.stat-tile.ok {
+  background: var(--ok-soft);
+  border-color: transparent;
+}
+
+.stat-tile.warm {
+  background: var(--warn-soft);
+  border-color: transparent;
+}
+
+.stat-tile.bad {
+  background: var(--bad-soft);
+  border-color: transparent;
+}
+
+.stat-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76em;
+  color: var(--ink-3);
+}
+
+.stat-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.stat-value b {
+  font-family: var(--serif);
+  font-size: 1.9em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.stat-unit {
+  font-size: 0.72em;
+  color: var(--ink-3);
+}
+
+.stat-note {
+  font-size: 0.76em;
+  color: var(--ink-2);
+  min-height: 1.2em;
+}
+
+.stat-actions {
+  margin-top: 14px;
+  align-items: center;
+}
+
+.chart {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 6px;
+  align-items: end;
+  margin-top: 12px;
+}
+
+.chart-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chart-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  /* 柱子区高度写死、基线画在柱子区自己的下边框上 —— 画在 .chart 上时，
+     刻度和星期会把柱子挤上去，柱底与轴线之间留一条缝（看起来像悬浮）。 */
+  height: 118px;
+  border-bottom: 1px solid var(--line);
+}
+
+.chart-bars .bar {
+  width: 46%;
+  max-width: 13px;
+  border-radius: 4px 4px 2px 2px;
+  background: var(--accent);
+  opacity: 0.85;
+  transition: height 0.25s ease;
+}
+
+/* 复习柱和跟读柱各一种颜色。两条都写上：只写 .attempts 时，
+   复习柱靠上面那条基础规则「恰好」也是强调色，看着对、改起来一改就错。 */
+.chart-bars .bar.reviews {
+  background: var(--accent);
+}
+
+.chart-bars .bar.attempts {
+  background: var(--ok);
+  opacity: 0.5;
+}
+
+.chart-col.is-empty .bar {
+  background: var(--line-strong);
+  opacity: 0.45;
+}
+
+.chart-tick,
+.chart-week {
+  text-align: center;
+  font-size: 0.68em;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-week {
+  font-size: 0.64em;
+  opacity: 0.7;
+}
+
+.chart-col.is-today .chart-tick {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 0.76em;
+  color: var(--ink-2);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.swatch.reviews {
+  background: var(--accent);
+}
+
+.swatch.attempts {
+  background: var(--ok);
+  opacity: 0.55;
+}
+
+.channel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.channel-row {
+  display: grid;
+  grid-template-columns: 4.2em 1fr 4.6em 6.6em;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.86em;
+}
+
+.channel-name {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.channel-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 99px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.channel-bar .fill,
+.channel-bar .done {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 99px;
+  background: var(--accent-soft);
+}
+
+.channel-bar .done {
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.channel-num {
+  text-align: right;
+  color: var(--ink-2);
+}
+
+.channel-note {
+  color: var(--ink-3);
+  font-size: 0.92em;
+}
+
+.weak-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+
+.weak-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.weak-row:last-child {
+  border-bottom: 0;
+}
+
+.weak-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.weak-sentence {
+  font-family: var(--serif);
+  font-size: 1.02em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weak-meta {
+  font-size: 0.76em;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+
+.pronounce-summary {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 10px;
+}
+
+.big-score {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.big-score b {
+  font-family: var(--serif);
+  font-size: 2.3em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.big-score .unit {
+  font-size: 0.72em;
+  color: var(--ink-3);
+}
+
+.pronounce-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.86em;
+  color: var(--ink-2);
+}
+
+.spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 44px;
+  margin-left: auto;
+}
+
+.spark-bar {
+  width: 9px;
+  border-radius: 3px 3px 1px 1px;
+  background: var(--accent);
+  opacity: 0.45;
+}
+
+.spark-bar.is-good {
+  background: var(--ok);
+  opacity: 0.8;
+}
+
+.spark-bar.is-meh {
+  background: var(--warn);
+  opacity: 0.65;
+}
+
+/* ================================================================== 关于 / 快捷键 */
+
+.about-hero {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.about-mark {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: var(--r-md);
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--serif);
+  font-size: 1.5em;
+}
+
+.kv-row {
+  display: grid;
+  grid-template-columns: 5.6em 1fr;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--line);
+  font-size: 0.84em;
+}
+
+.kv-row:last-child {
+  border-bottom: 0;
+}
+
+.kv-k {
+  color: var(--ink-3);
+}
+
+.kv-v {
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.about-folders {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.about-buttons {
+  align-items: center;
+}
+
+.shortcut-grid {
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: 9.5em 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.shortcut-row:last-child {
+  border-bottom: 0;
+}
+
+.shortcut-keys {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.shortcut-what {
+  font-size: 0.9em;
+  color: var(--ink-2);
+}
+
+/* ================================================================== 首启引导 */
+
+.guide {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.guide-step {
+  display: grid;
+  grid-template-columns: 2.2em 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.guide-step.is-done {
+  background: var(--ok-soft);
+  border-color: transparent;
+}
+
+.guide-num {
+  width: 2em;
+  height: 2em;
+  border-radius: 99px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-3);
+  color: var(--ink-2);
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+}
+
+.guide-step.is-done .guide-num {
+  background: var(--ok);
+  color: #fff;
+}
+
+.guide-body b {
+  display: block;
+  font-size: 0.95em;
+}
+
+.guide-body .hint {
+  font-size: 0.8em;
+}
+
+/* ================================================================== 骨架屏 */
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton i {
+  display: block;
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-3), var(--surface-2), var(--surface-3));
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.4s linear infinite;
+}
+
+.skeleton i:nth-child(2) {
+  width: 82%;
+}
+
+.skeleton i:nth-child(3) {
+  width: 64%;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ================================================================== 收尾 */
+
+@media (max-width: 900px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .channel-row {
+    grid-template-columns: 3.6em 1fr 4.2em;
+  }
+
+  .channel-note {
+    display: none;
+  }
 }

@@ -29,10 +29,17 @@
         <div class="side-block" id="side-block"></div>
 
         <div class="side-foot">
-          <span class="dot" id="health-dot"></span>
-          <span class="grow" id="health-text">正在连接…</span>
-          <button class="iconbtn" id="theme-btn" type="button" title="切换配色" aria-label="切换配色"></button>
-          <button class="iconbtn" id="side-btn" type="button" title="收起侧栏" aria-label="收起侧栏"></button>
+          <div class="foot-row">
+            <span class="dot" id="health-dot"></span>
+            <button class="side-version" id="about-btn" type="button" title="关于 / 诊断">
+              <span id="health-text">正在连接…</span>
+            </button>
+          </div>
+          <div class="foot-tools">
+            <button class="iconbtn" id="help-btn" type="button" data-icon="help" title="快捷键（?）" aria-label="快捷键"></button>
+            <button class="iconbtn" id="theme-btn" type="button" data-icon="sun" title="切换配色" aria-label="切换配色"></button>
+            <button class="iconbtn" id="side-btn" type="button" data-icon="panel" title="收起侧栏" aria-label="收起侧栏"></button>
+          </div>
         </div>
       </aside>
 

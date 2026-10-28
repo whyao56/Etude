@@ -91,6 +91,9 @@ export function pronouncePanel({ cardId = 0, exampleId = 0, audioSrc = "", open 
     const score = Number(payload.score || 0);
     const good = items.filter((item) => item.score !== null);
 
+    const verdict =
+      score >= 85 ? "很稳" : score >= 70 ? "能用" : score >= 50 ? "再念一遍" : "再慢一点";
+
     const scoreNode = el("div", { class: `score ${scoreTone(score)}` }, [
       el("b", { text: String(Math.round(score)) }),
       el("span", { class: "unit", text: "分" }),
@@ -138,14 +141,32 @@ export function pronouncePanel({ cardId = 0, exampleId = 0, audioSrc = "", open 
       el("span", { text: payload.advice || "" }),
     ]);
 
+    // 逐词对照只在真做了转写时才有（后端只在那时给 words）——
+    // 声学模式编一份「全命中」是假信息，看着还像是听懂了。
+    const words =
+      Array.isArray(payload.words) && payload.words.length
+        ? el("div", { class: "words" }, [
+            el("span", { class: "lab", text: "逐词对照" }),
+            el(
+              "span",
+              { class: "word-row" },
+              payload.words.map((word) =>
+                el("span", { class: `w ${word.hit ? "hit" : "miss"}`, text: word.word }),
+              ),
+            ),
+          ])
+        : null;
+
     resultHost.append(
       el("div", { class: "score-line" }, [
         scoreNode,
+        el("span", { class: `chip verdict ${scoreTone(score)}`, text: verdict }),
         el("span", { class: "chip mode", text: MODE_LABEL[payload.mode] || payload.mode || "" }),
         el("span", { class: "grow" }),
       ]),
       advice,
       el("div", { class: "items" }, rows),
+      words,
       heard,
       own ? el("div", { class: "own" }, [el("span", { class: "lab", text: "你自己念的" }), own]) : null,
       summary,

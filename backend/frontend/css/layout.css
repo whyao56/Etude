@@ -162,11 +162,53 @@
 .side-foot {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   border-top: 1px solid var(--line);
   padding-top: 10px;
   font-size: 0.76em;
   color: var(--ink-3);
+}
+
+/* 版本号占住剩下的宽度（太长就省略号），三个图标钉在右边 ——
+   244px 宽度下挤在一行里，「v0.1.0 · 源码」会被折成两行。 */
+.foot-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.foot-tools {
+  display: flex;
+  gap: 0;
+  flex: 0 0 auto;
+}
+
+.side-version {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.side-version > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-version:hover {
+  color: var(--accent);
+  background: var(--surface-2);
 }
 
 .side-foot .grow {

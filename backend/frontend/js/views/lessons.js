@@ -101,7 +101,7 @@ function builder(host) {
   });
 
   box.append(
-    el("div", { class: "row" }, [input, button]),
+    el("div", { class: "row" }, [input, button, importButton(host, message)]),
     message,
   );
 
@@ -111,6 +111,43 @@ function builder(host) {
   ]);
   box.appendChild(details);
   return box;
+}
+
+/* 导入：接住自己导出的那份 JSON。
+ * 藏在一个 file input 后面 —— 按钮长得像按钮，但点下去是系统文件框。 */
+function importButton(host, message) {
+  const file = el("input", {
+    type: "file",
+    accept: "application/json,.json",
+    style: { display: "none" },
+  });
+  const button = el("button", {
+    class: "btn ghost",
+    type: "button",
+    text: "导入 JSON",
+    title: "选一个之前从这里导出的训练包文件",
+  });
+  button.addEventListener("click", () => file.click());
+  file.addEventListener("change", async () => {
+    const picked = file.files && file.files[0];
+    if (!picked) return;
+    button.disabled = true;
+    message.textContent = "正在读文件…";
+    try {
+      const text = await picked.text();
+      const payload = JSON.parse(text);
+      const res = await post("/api/lessons/import", payload);
+      message.textContent = `导进来了：${res.examples} 条例句。语音要在这儿重新生成。`;
+      await refreshList(host);
+      go("lessons", res.lesson_id);
+    } catch (err) {
+      message.textContent = err.message || "这个文件读不了。";
+    } finally {
+      button.disabled = false;
+      file.value = "";
+    }
+  });
+  return el("span", { class: "import-wrap" }, [file, button]);
 }
 
 function batchPanel(host) {

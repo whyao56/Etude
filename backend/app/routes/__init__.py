@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from . import batch, cards, config, data, lessons, media, meta, plans, pronounce
+from . import batch, cards, config, data, lessons, media, meta, plans, pronounce, progress
 
 ROUTERS = (
     meta.router,
@@ -22,6 +22,7 @@ ROUTERS = (
     lessons.router,
     cards.router,
     pronounce.router,
+    progress.router,
     data.router,
     media.router,
 )

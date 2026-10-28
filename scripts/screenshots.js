@@ -164,6 +164,24 @@ async function goto(hash, settle = 900) {
 async function setPrefs(prefs) {
   const payload = JSON.stringify(prefs);
   await evalIn(`localStorage.setItem("etude-prefs", ${JSON.stringify(payload)}); true`);
+  // 写完必须等一下再跳：无头 Chrome 里「写 localStorage → 立刻 navigate」
+  // 会把这次写丢掉，结果是两张配色图和一张一模一样（实测踩过）。
+  await sleep(260);
+}
+
+/** 兜底：跳过去之后如果配色还是不对，就点按钮点到对为止。
+ *  判据读 localStorage 里的 prefs —— 那才是 savePrefs 写的真值；
+ *  data-theme 在「跟随系统」时是被删掉的，拿它判断会误以为没切换。 */
+async function ensureTheme(theme) {
+  for (let i = 0; i < 6; i += 1) {
+    const now = await evalIn(
+      `(() => { try { return JSON.parse(localStorage.getItem("etude-prefs") || "{}").theme || "auto"; } catch (e) { return "auto"; } })()`,
+    );
+    if (now === theme) return true;
+    await evalIn(`document.querySelector("#theme-btn").click(); true`);
+    await sleep(220);
+  }
+  return false;
 }
 
 async function resetPrefs() {
@@ -226,6 +244,13 @@ async function shot(code, name, scrollTop = 0) {
   if (scrollTop) {
     await evalIn(`(() => { const main = document.querySelector(".content") || window; main.scrollTo ? main.scrollTo(0, ${scrollTop}) : (main.scrollTop = ${scrollTop}); if (!main.scrollTo) window.scrollTo(0, ${scrollTop}); return true; })()`);
     await sleep(260);
+  } else {
+    // 不显式滚动时也回到顶部：翻面之后页面会自己往下滚，
+    // 拍出来的「整页」图就变成半张，看上去像界面裁掉了。
+    await evalIn(
+      `(() => { const main = document.querySelector(".content"); if (main) main.scrollTop = 0; window.scrollTo(0, 0); return true; })()`,
+    );
+    await sleep(180);
   }
   const file = path.join(OUT, `${code}-${name}.png`);
   await browser.screenshot(file);
@@ -405,15 +430,22 @@ async function gallery(data) {
     }
   }
 
-  // 14/15 深色与冷白
+  // 14/15 深色与冷白 —— 拍进度页：一屏里有数字、图、条，配色差得最清楚，
+  // 而且它不依赖训练队列走到第几张卡（拍训练台的话每次内容都不一样）。
   for (const [code, theme, name] of [
     ["14", "dark", "theme-dark"],
     ["15", "light", "theme-light"],
   ]) {
     if (!want(code)) continue;
     await setPrefs({ theme, size: "m", side: "open" });
-    await goto("#/study", 1300);
-    await waitFor(`document.querySelector(".stage")`, "训练台");
+    // 必须整页 reload：改 hash 只是换视图，不会重跑 boot()->applyLook()，
+    // 结果就是 prefs 里写着 dark、屏幕上还是上一个配色（实测踩过两次）。
+    await browser.reload(1400);
+    await goto("#/progress", 1600);
+    await waitFor(`document.querySelector(".stat-grid")`, "进度页");
+    await ensureTheme(theme);
+    // 换配色会弹一条 toast，等它自己消失再拍 —— 图里挂着提示很显眼。
+    await sleep(3200);
     await shot(code, name);
   }
 
@@ -439,6 +471,53 @@ async function gallery(data) {
       }
     } catch (err) {
       console.log(`  （自检那张没出：${err.message}）`);
+    }
+  }
+
+  // 17 进度页
+  if (want("17")) {
+    await goto("#/progress", 1600);
+    try {
+      await waitFor(`document.querySelector(".stat-grid")`, "进度页四块指标");
+      await shot("17", "progress");
+    } catch (err) {
+      console.log(`  （进度页那张没出：${err.message}）`);
+    }
+  }
+
+  // 18 关于抽屉（诊断信息 + 打开目录）
+  if (want("18")) {
+    await goto("#/study", 1300);
+    const opened = await evalIn(`(() => {
+      const button = document.querySelector("#about-btn");
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`);
+    if (opened) {
+      await sleep(700);
+      await shot("18", "about");
+      await evalIn(`(() => { const close = document.querySelector(".drawer .drawer-foot .btn");
+        if (close) close.click(); return true; })()`);
+      await sleep(300);
+    }
+  }
+
+  // 19 快捷键抽屉
+  if (want("19")) {
+    await goto("#/study", 1200);
+    const opened = await evalIn(`(() => {
+      const button = document.querySelector("#help-btn");
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`);
+    if (opened) {
+      await sleep(600);
+      await shot("19", "shortcuts");
+      await evalIn(`(() => { const close = document.querySelector(".drawer .drawer-foot .btn");
+        if (close) close.click(); return true; })()`);
+      await sleep(300);
     }
   }
 

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
@@ -56,6 +56,116 @@ def _run_generation(lesson_id: int) -> None:
         pipeline.generate(lesson_id)
     except Exception:  # noqa: BLE001
         pass
+
+
+@router.get("/api/lessons/{lesson_id}/export")
+def export_lesson(lesson_id: int) -> dict:
+    """导出一个训练包的文本部分（例句、场景、中文说法、替换练习）。
+
+    刻意**不带**音频和配图：那是几百 KB 到几 MB 的二进制，塞进 JSON 里
+    既没法读也不好传。导出的用途是「换个地方看/贴给别人/自己留档」。
+    """
+    lesson = db.lesson_detail(lesson_id)
+    if lesson is None:
+        raise HTTPException(404, "没有这个训练包。")
+    with_audio = sum(1 for ex in lesson["examples"] if ex.get("audio_path"))
+    return {
+        "format": "etude-lesson",
+        "format_version": 1,
+        "exported_at": db.now(),
+        "lesson": {
+            "target": lesson.get("target"),
+            "kind": lesson.get("kind"),
+            "language": lesson.get("language"),
+            "gloss": lesson.get("gloss"),
+            "ipa": lesson.get("ipa"),
+            "note": lesson.get("note"),
+            "created_at": lesson.get("created_at"),
+        },
+        "examples": [
+            {
+                "ord": ex.get("ord"),
+                "sentence": ex.get("sentence"),
+                "scene_en": ex.get("scene_en"),
+                "scene_zh": ex.get("scene_zh"),
+                "zh_variants": ex.get("zh_variants") or [],
+                "register": ex.get("register"),
+            }
+            for ex in lesson["examples"]
+        ],
+        "swaps": lesson.get("swaps") or [],
+        "note": f"共 {len(lesson['examples'])} 条例句，其中 {with_audio} 条带语音（语音不随文件导出）。",
+    }
+
+
+@router.post("/api/lessons/import")
+def import_lesson(payload: dict) -> dict:
+    """把导出的 JSON 再变回一个训练包。
+
+    语音和配图不随文件走，所以导进来的包一开始是「缺语音」状态
+    —— 详情页里那个「补齐语音」按钮就是给它准备的。
+    """
+    from .. import prompts
+
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "要一个 JSON 对象。")
+    fmt = payload.get("format")
+    if fmt and fmt != "etude-lesson":
+        raise HTTPException(400, f"这个文件的格式是 {fmt}，不是 etude-lesson。")
+
+    lesson_in = payload.get("lesson") or {}
+    target = str(lesson_in.get("target") or "").strip()
+    if not target:
+        raise HTTPException(400, "文件里没有目标词（lesson.target）。")
+
+    profile = prompts.language_profile(str(lesson_in.get("language") or "en").strip())
+    if not profile["supported"]:
+        raise HTTPException(400, f"{profile['label']}还没开放。")
+
+    kind = lesson_in.get("kind") or prompts.classify_target(target)
+    if kind not in ("word", "phrase", "sentence"):
+        kind = "word"
+
+    clean = []
+    seen: set[str] = set()
+    for item in (payload.get("examples") or [])[:40]:
+        if not isinstance(item, dict):
+            continue
+        sentence = str(item.get("sentence") or "").strip()
+        if not sentence:
+            continue
+        # 同一句话出现两次会变成两张一模一样的卡，训练时连着出现三次同一句 ——
+        # 看着像程序坏了，其实是数据里有重复。按小写去重，保留第一次出现的那条。
+        key = sentence.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        variants = [str(v).strip() for v in (item.get("zh_variants") or []) if str(v).strip()]
+        clean.append(
+            {
+                "sentence": sentence[:400],
+                "scene_en": str(item.get("scene_en") or "").strip()[:600],
+                "scene_zh": str(item.get("scene_zh") or "").strip()[:600],
+                "zh_variants": variants[:4],
+                "register": str(item.get("register") or "").strip()[:20],
+            }
+        )
+    if not clean:
+        raise HTTPException(400, "文件里的例句都没有句子内容。")
+
+    lesson_id = db.create_lesson(target, kind, profile["id"], 0)
+    db.finish_lesson(
+        lesson_id,
+        {
+            "gloss": str(lesson_in.get("gloss") or "")[:400],
+            "ipa": str(lesson_in.get("ipa") or "")[:120],
+            "note": str(lesson_in.get("note") or "")[:600],
+            "examples": clean,
+            "swaps": payload.get("swaps") or [],
+        },
+        {},
+    )
+    return {"lesson_id": lesson_id, "examples": len(clean), "need_audio": True}
 
 
 @router.get("/api/lessons/{lesson_id}")

@@ -24,6 +24,7 @@ const CHANNEL_OPTIONS = [{ id: "", label: "全部通道" }].concat(
 
 let query = { lesson_id: 0, channel: "", state: "all", q: "", limit: 200, offset: 0 };
 let picked = new Set();
+let syncSelection = () => {};
 let searchTimer = 0;
 
 export async function render(host) {
@@ -106,10 +107,21 @@ function drawTable(data, host) {
   const cards = data.cards || [];
   picked = new Set();
 
+  const bar = bulkBar(host);
+  const count = el("span", { class: "bulk-count", text: "勾几张卡，这里才会出现操作" });
+  bar.prepend(count);
+  // 批量操作只在真选了东西时出现：一进页面就摆着五个按钮，
+  // 每个点下去都弹「先勾几张卡」，等于没做。
+  syncSelection = () => {
+    count.textContent = picked.size ? `已选 ${picked.size} 张` : "勾几张卡，这里才会出现操作";
+    bar.classList.toggle("is-active", picked.size > 0);
+  };
+  syncSelection();
+
   wrap.appendChild(
     el("div", { class: "browser-head" }, [
       el("span", { class: "hint grow", text: `一共 ${data.total || 0} 张，这一屏 ${cards.length} 张` }),
-      bulkBar(host),
+      bar,
     ]),
   );
 
@@ -118,11 +130,20 @@ function drawTable(data, host) {
     return wrap;
   }
 
+  const boxes = [];
+  const allBox = el("input", { type: "checkbox", title: "全选这一屏" });
+  allBox.addEventListener("change", () => {
+    for (const box of boxes) {
+      box.checked = allBox.checked;
+      box.dispatchEvent(new Event("change"));
+    }
+  });
+
   const table = el("table", { class: "table" });
   table.appendChild(
     el("thead", {}, [
       el("tr", {}, [
-        el("th", { class: "pick" }),
+        el("th", { class: "pick" }, [allBox]),
         el("th", { text: "通道" }),
         el("th", { text: "目标 · 例句" }),
         el("th", { text: "到期" }),
@@ -136,9 +157,12 @@ function drawTable(data, host) {
   const tbody = el("tbody");
   for (const card of cards) {
     const box = el("input", { type: "checkbox" });
+    boxes.push(box);
     box.addEventListener("change", () => {
       if (box.checked) picked.add(card.id);
       else picked.delete(card.id);
+      if (!box.checked) allBox.checked = false;
+      syncSelection();
     });
     const tr = el("tr", { class: card.suspended ? "off" : "", dataset: { id: String(card.id) } }, [
       el("td", { class: "pick" }, [box]),
@@ -185,10 +209,11 @@ function drawTable(data, host) {
 
 function bulkBar(host) {
   const bar = el("div", { class: "bulkbar" });
+  const actions = el("div", { class: "bulk-actions" });
   const add = (label, action, cls = "btn sm") => {
     const button = el("button", { class: cls, type: "button", text: label });
     button.addEventListener("click", () => action(button));
-    bar.appendChild(button);
+    actions.appendChild(button);
   };
   const ids = () => [...picked];
   const needPick = (fn) => async () => {
@@ -207,6 +232,7 @@ function bulkBar(host) {
   add("推后 1 天", needPick((list) => post("/api/cards/push", { ids: list, days: 1 })));
   add("推后 7 天", needPick((list) => post("/api/cards/push", { ids: list, days: 7 })));
   add("当作没学过", needPick((list) => post("/api/cards/batch", { ids: list, patch: { introduced: 0 } })));
+  bar.appendChild(actions);
   return bar;
 }
 

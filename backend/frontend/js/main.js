@@ -18,8 +18,10 @@ import * as cards from "./views/cards.js";
 import * as lesson from "./views/lesson.js";
 import * as lessons from "./views/lessons.js";
 import * as plans from "./views/plans.js";
+import * as progress from "./views/progress.js";
 import * as settings from "./views/settings.js";
 import * as study from "./views/study.js";
+import { openAbout, openShortcuts } from "./views/about.js";
 
 const app = $("#app");
 const sideBlock = $("#side-block");
@@ -78,6 +80,7 @@ async function refreshCounts() {
 
 const VIEWS_IMPL = {
   study,
+  progress,
   lessons: {
     render: (host, id) => (id ? lesson.render(host, id) : lessons.render(host)),
   },
@@ -158,8 +161,28 @@ function bindKeys() {
       return;
     }
     const target = event.target;
-    if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+    const typing = target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
     if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+    // 这两个键在训练页之外也要能用：一个是「帮助」，一个是「去搜」。
+    if (!typing && (event.key === "?" || (event.key === "/" && event.shiftKey))) {
+      if (!drawerOpen()) {
+        openShortcuts();
+        event.preventDefault();
+        return;
+      }
+    }
+    if (!typing && event.key === "/" && !drawerOpen()) {
+      go("cards");
+      event.preventDefault();
+      // 页面刚切过去，输入框还没建出来 —— 等一帧再聚焦。
+      setTimeout(() => {
+        const search = document.querySelector('#app input[type="search"]');
+        if (search) search.focus();
+      }, 120);
+      return;
+    }
+    if (typing) return;
     if (drawerOpen()) return;
     if (currentRoute().view !== "study") return;
     const handled = await study.handleKey(event);
@@ -180,7 +203,9 @@ function bindChrome() {
       import("./core/store.js").then((mod) => {
         mod.savePrefs();
         applyLook();
+        paintThemeIcon();
         const label = (mod.THEMES.find((one) => one.id === next) || {}).label || next;
+        theme.title = `配色：${label}（点一下换下一个）`;
         toast(`配色：${label}`);
       });
     });
@@ -195,6 +220,23 @@ function bindChrome() {
       });
     });
   }
+  const help = $("#help-btn");
+  if (help) help.addEventListener("click", () => openShortcuts());
+  const about = $("#about-btn");
+  if (about) about.addEventListener("click", () => openAbout());
+}
+
+/** 深色时把配色按钮的图标换成月亮 —— 图标和当前状态对不上是最小的那种「不对劲」。 */
+function paintThemeIcon() {
+  const button = $("#theme-btn");
+  if (!button) return;
+  const explicit = document.documentElement.getAttribute("data-theme");
+  const systemDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const dark = explicit === "dark" || (!explicit && systemDark);
+  button.dataset.icon = dark ? "moon" : "sun";
+  button.replaceChildren();
+  delete button.dataset.iconDone;
+  paintIcons(button);
 }
 
 /* ------------------------------------------------------------------ 健康 */
@@ -231,6 +273,15 @@ async function checkHealth() {
 async function boot() {
   loadPrefs();
   applyLook();
+  paintThemeIcon();
+  if (window.matchMedia) {
+    // 跟随系统时，系统切换深色要不刷新就跟着变（图标也要跟着换）。
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => {
+      if ((state.prefs.theme || "auto") === "auto") paintThemeIcon();
+    };
+    if (query.addEventListener) query.addEventListener("change", onChange);
+  }
   buildNav();
   bindChrome();
   bindKeys();
